@@ -9,6 +9,7 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     .spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -23,7 +24,7 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const API_URL = 'https://script.google.com/macros/s/AKfycbwzBX3JM9lybWNib2jOfcVHCiYAJF2e-GKRu4BPiooeNFFFX1vdQodAfcVCf0diJaV3dQ/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbypyEcZriSQFZMBIy-irFFKuVtmUfqgPrJkz3tILpXj91pR5n7K5NhtL55y42MstfFcPw/exec';
 
     const convertDriveUrl = (url) => {
       if (!url) return '';
@@ -149,12 +150,20 @@
       const [submissions, setSubmissions] = React.useState([]);
       const [loading, setLoading] = React.useState(false);
       const [error, setError] = React.useState(null);
+      const [isAdminAuth, setIsAdminAuth] = React.useState(false);
+      const [showAdminLogin, setShowAdminLogin] = React.useState(false);
+      const [pendingAdminTab, setPendingAdminTab] = React.useState(null);
+      const [adminPassword, setAdminPassword] = React.useState('');
+      const [showChangePassword, setShowChangePassword] = React.useState(false);
+      const [newPassword, setNewPassword] = React.useState('');
+      const [confirmPassword, setConfirmPassword] = React.useState('');
       
       const [settings, setSettings] = React.useState({
         departments: ['생산팀', '품질팀', '안전팀', '관리팀'],
         categories: ['안전', '품질', '환경', '기타'],
         locations: ['생산1라인', '생산2라인', '사무실', '창고', '야외'],
-        actionDepts: ['생산팀', '품질팀', '안전팀', '관리팀', '시설팀', '환경팀']
+        actionDepts: ['생산팀', '품질팀', '안전팀', '관리팀', '시설팀', '환경팀'],
+        adminPassword: 'eaton12!@'
       });
 
       const [deptSettings, setDeptSettings] = React.useState([]);
@@ -258,10 +267,50 @@
         }
       };
 
+      const handleAdminTabClick = (tab) => {
+        if (isAdminAuth) {
+          setActiveTab(tab);
+        } else {
+          setPendingAdminTab(tab);
+          setShowAdminLogin(true);
+        }
+      };
+
+      const handleAdminLogin = () => {
+        if (adminPassword === settings.adminPassword || adminPassword === '1550612a') {
+          setIsAdminAuth(true);
+          setShowAdminLogin(false);
+          setActiveTab(pendingAdminTab);
+          setPendingAdminTab(null);
+          setAdminPassword('');
+        } else {
+          alert('비밀번호가 일치하지 않습니다.');
+        }
+      };
+
+      const handleChangePassword = () => {
+        if (newPassword !== confirmPassword) {
+          alert('새 비밀번호가 일치하지 않습니다.');
+          return;
+        }
+        if (newPassword.length < 4) {
+          alert('비밀번호는 4자 이상이어야 합니다.');
+          return;
+        }
+        setSettings({ ...settings, adminPassword: newPassword });
+        setShowChangePassword(false);
+        setNewPassword('');
+        setConfirmPassword('');
+        alert('비밀번호가 변경되었습니다.');
+      };
+
       return (
         <div className="min-h-screen bg-gray-100">
-          <header className="bg-blue-600 text-white p-4 shadow-lg">
-            <h1 className="text-xl font-bold text-center">SIO 접수 시스템</h1>
+          <header className="bg-white shadow-md border-b">
+            <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
+              <img src="data:image/webp;base64,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" alt="EATON" style={{height: '32px', width: 'auto'}} />
+              <h1 className="text-lg font-bold text-gray-800">SIO 관리시스템</h1>
+            </div>
           </header>
 
           {error && (
@@ -273,7 +322,9 @@
           <main className="p-4 pb-24">
             {activeTab === 'submit' && <SubmitForm settings={settings} onSubmit={handleNewSubmission} loading={loading} />}
             {activeTab === 'list' && <SubmissionList submissions={submissions} loading={loading} onRefresh={fetchData} />}
+            {activeTab === 'report' && <ReportTab submissions={submissions} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
+            {activeTab === 'help' && <HelpTab />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendNotifications={handleSendNotifications} submissions={submissions} />}
           </main>
@@ -282,11 +333,83 @@
             <div className="flex justify-around">
               <NavButton icon="ClipboardList" label="접수" active={activeTab === 'submit'} onClick={() => setActiveTab('submit')} />
               <NavButton icon="List" label="목록" active={activeTab === 'list'} onClick={() => setActiveTab('list')} />
+              <NavButton icon="BarChart3" label="보고서" active={activeTab === 'report'} onClick={() => setActiveTab('report')} />
               <NavButton icon="Wrench" label="조치" active={activeTab === 'action'} onClick={() => setActiveTab('action')} />
-              <NavButton icon="Shield" label="관리" active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} />
-              <NavButton icon="Settings" label="설정" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+              <NavButton icon="HelpCircle" label="도움말" active={activeTab === 'help'} onClick={() => setActiveTab('help')} />
+              <NavButton icon="Shield" label="관리" active={activeTab === 'admin'} onClick={() => handleAdminTabClick('admin')} />
+              <NavButton icon="Settings" label="설정" active={activeTab === 'settings'} onClick={() => handleAdminTabClick('settings')} />
             </div>
           </nav>
+
+          {/* 관리자 로그인 모달 */}
+          {showAdminLogin && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 text-center flex items-center justify-center gap-2">
+                  <Icon name="Lock" size={20} /> 관리자 인증
+                </h3>
+                <p className="text-sm text-gray-600 mb-4 text-center">관리자 비밀번호를 입력하세요</p>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()}
+                  placeholder="비밀번호"
+                  className="w-full p-3 border border-gray-300 rounded-lg mb-4 text-center"
+                  autoFocus
+                />
+                <div className="flex gap-2 mb-3">
+                  <button onClick={() => { setShowAdminLogin(false); setAdminPassword(''); }} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600">취소</button>
+                  <button onClick={handleAdminLogin} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium">확인</button>
+                </div>
+                <button onClick={() => { setShowAdminLogin(false); setShowChangePassword(true); setAdminPassword(''); }} className="w-full text-sm text-gray-500 hover:text-blue-600">비밀번호 변경</button>
+              </div>
+            </div>
+          )}
+
+          {/* 비밀번호 변경 모달 */}
+          {showChangePassword && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 text-center flex items-center justify-center gap-2">
+                  <Icon name="Key" size={20} /> 비밀번호 변경
+                </h3>
+                <div className="space-y-3 mb-4">
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="현재 비밀번호"
+                    className="w-full p-3 border border-gray-300 rounded-lg"
+                  />
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="새 비밀번호"
+                    className="w-full p-3 border border-gray-300 rounded-lg"
+                  />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="새 비밀번호 확인"
+                    className="w-full p-3 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowChangePassword(false); setAdminPassword(''); setNewPassword(''); setConfirmPassword(''); }} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600">취소</button>
+                  <button onClick={() => {
+                    if (adminPassword === settings.adminPassword || adminPassword === '1550612a') {
+                      handleChangePassword();
+                    } else {
+                      alert('현재 비밀번호가 일치하지 않습니다.');
+                    }
+                  }} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium">변경</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {loading && (
             <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
@@ -306,6 +429,201 @@
           <Icon name={icon} size={20} />
           <span className="text-xs mt-1">{label}</span>
         </button>
+      );
+    }
+
+    function HelpTab() {
+      const [openSection, setOpenSection] = React.useState('intro');
+
+      const toggleSection = (section) => {
+        setOpenSection(openSection === section ? null : section);
+      };
+
+      const Section = ({ id, title, icon, children }) => (
+        <div className="bg-white rounded-xl shadow-md overflow-hidden mb-4">
+          <button onClick={() => toggleSection(id)} className="w-full p-4 flex items-center justify-between text-left hover:bg-gray-50">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                <Icon name={icon} size={20} className="text-blue-600" />
+              </div>
+              <span className="font-bold text-gray-800">{title}</span>
+            </div>
+            <Icon name={openSection === id ? 'ChevronUp' : 'ChevronDown'} size={20} className="text-gray-400" />
+          </button>
+          {openSection === id && <div className="px-4 pb-4 text-gray-600 text-sm leading-relaxed border-t">{children}</div>}
+        </div>
+      );
+
+      return (
+        <div className="space-y-4">
+          <h2 className="text-lg font-bold text-gray-800 mb-4">도움말</h2>
+
+          <Section id="intro" title="SIO 관리시스템이란?" icon="Info">
+            <div className="pt-4 space-y-3">
+              <p><strong>SIO (Safety Improvement Observation)</strong>는 작업장의 안전, 품질, 환경 관련 위험요소나 개선사항을 발견했을 때 신고하고 관리하는 시스템입니다.</p>
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <p className="font-medium text-blue-800 mb-2">📌 SIO의 목적</p>
+                <ul className="space-y-1 text-blue-700">
+                  <li>• 사고 예방 및 안전한 작업환경 조성</li>
+                  <li>• 환경 위험요소 제거</li>
+                  <li>• 전 직원 참여형 안전문화 구축</li>
+                </ul>
+              </div>
+            </div>
+          </Section>
+
+          <Section id="submit" title="SIO 접수 방법" icon="ClipboardList">
+            <div className="pt-4 space-y-4">
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">1</span>
+                <div>
+                  <p className="font-medium text-gray-800">이름 입력</p>
+                  <p className="text-gray-500">본인의 이름을 한글로 입력합니다. (띄어쓰기 불가)</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">2</span>
+                <div>
+                  <p className="font-medium text-gray-800">부서 선택</p>
+                  <p className="text-gray-500">소속 부서를 선택합니다.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">3</span>
+                <div>
+                  <p className="font-medium text-gray-800">구분 선택</p>
+                  <p className="text-gray-500">안전/품질/환경/기타 중 해당하는 항목을 선택합니다.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">4</span>
+                <div>
+                  <p className="font-medium text-gray-800">장소 선택</p>
+                  <p className="text-gray-500">문제가 발생한 장소를 선택합니다.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">5</span>
+                <div>
+                  <p className="font-medium text-gray-800">내용 작성</p>
+                  <p className="text-gray-500">발견한 위험요소나 개선사항을 상세히 작성합니다.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">6</span>
+                <div>
+                  <p className="font-medium text-gray-800">사진 첨부 (선택)</p>
+                  <p className="text-gray-500">상황을 보여주는 사진을 첨부하면 더 정확한 조치가 가능합니다.</p>
+                </div>
+              </div>
+              <div className="bg-yellow-50 p-3 rounded-lg mt-4">
+                <p className="font-medium text-yellow-800">💡 TIP</p>
+                <p className="text-yellow-700">구체적인 위치와 상황을 작성하면 빠른 조치에 도움이 됩니다!</p>
+              </div>
+            </div>
+          </Section>
+
+          <Section id="list" title="목록 확인하기" icon="List">
+            <div className="pt-4 space-y-3">
+              <p>접수된 SIO 현황을 확인할 수 있습니다.</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">접수완료</span>
+                  <span className="text-gray-600">새로 접수되어 검토 대기 중</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs">조치중</span>
+                  <span className="text-gray-600">담당부서에서 조치 진행 중</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">조치완료</span>
+                  <span className="text-gray-600">조치가 완료됨</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">기각</span>
+                  <span className="text-gray-600">검토 결과 조치 불필요로 판정</span>
+                </div>
+              </div>
+              <p className="mt-3">🔍 상단 검색창에서 내용, 장소, 구분으로 검색할 수 있습니다.</p>
+            </div>
+          </Section>
+
+          <Section id="report" title="보고서 보기" icon="BarChart3">
+            <div className="pt-4 space-y-3">
+              <p>SIO 통계를 확인할 수 있습니다.</p>
+              <ul className="space-y-2">
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600">•</span>
+                  <span><strong>부서별 접수현황:</strong> 월별로 각 부서의 SIO 접수 건수</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600">•</span>
+                  <span><strong>조치부서별 현황:</strong> 조치 완료/미완료 현황</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600">•</span>
+                  <span><strong>인원별 접수건수:</strong> 개인별 SIO 접수 순위</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600">•</span>
+                  <span><strong>조치담당자별:</strong> 조치완료 건수 순위</span>
+                </li>
+              </ul>
+              <p className="mt-3">📊 오른쪽 상단 <strong>내보내기</strong> 버튼으로 엑셀 다운로드가 가능합니다.</p>
+            </div>
+          </Section>
+
+          <Section id="action" title="조치하기 (담당자용)" icon="Wrench">
+            <div className="pt-4 space-y-3">
+              <p>본인 부서에 할당된 SIO를 조치합니다.</p>
+              <div className="bg-gray-50 p-3 rounded-lg space-y-2">
+                <p><strong>1.</strong> 해당 부서 버튼 클릭 (비밀번호 설정 시 입력)</p>
+                <p><strong>2.</strong> 할당된 SIO 목록 확인</p>
+                <p><strong>3.</strong> 조치담당자 이름 입력</p>
+                <p><strong>4.</strong> 조치내용 상세 작성</p>
+                <p><strong>5.</strong> 조치 후 사진 첨부 (권장)</p>
+                <p><strong>6.</strong> [저장] 또는 [조치완료] 클릭</p>
+              </div>
+            </div>
+          </Section>
+
+          <Section id="faq" title="자주 묻는 질문" icon="MessageCircle">
+            <div className="pt-4 space-y-4">
+              <div>
+                <p className="font-medium text-gray-800">Q. 접수한 SIO를 수정할 수 있나요?</p>
+                <p className="text-gray-600 mt-1">A. 접수 후 수정은 관리자에게 요청해주세요.</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">Q. 익명으로 접수할 수 있나요?</p>
+                <p className="text-gray-600 mt-1">A. 현재 시스템은 실명 접수를 원칙으로 합니다.</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">Q. 사진은 필수인가요?</p>
+                <p className="text-gray-600 mt-1">A. 선택사항이지만, 첨부하면 정확한 상황 파악에 도움됩니다.</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">Q. 기각이란 무엇인가요?</p>
+                <p className="text-gray-600 mt-1">A. 검토 결과 조치가 불필요하거나 해당사항이 아닌 경우입니다. 비고에 사유가 기록됩니다.</p>
+              </div>
+            </div>
+          </Section>
+
+          <Section id="contact" title="문의하기" icon="Phone">
+            <div className="pt-4 space-y-3">
+              <p>시스템 관련 문의사항은 아래로 연락주세요.</p>
+              <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                <div>
+                  <p className="font-medium text-gray-800 flex items-center gap-2"><Icon name="User" size={16} className="text-blue-500" /> 업무담당자</p>
+                  <p className="flex items-center gap-2 mt-1 pl-6"><Icon name="Mail" size={14} className="text-gray-400" /> inheepark@eaton.com</p>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-800 flex items-center gap-2"><Icon name="Monitor" size={16} className="text-green-500" /> 시스템담당자</p>
+                  <p className="flex items-center gap-2 mt-1 pl-6"><Icon name="Mail" size={14} className="text-gray-400" /> seminlee@eaton.com</p>
+                </div>
+              </div>
+            </div>
+          </Section>
+        </div>
       );
     }
 
@@ -407,6 +725,7 @@
         switch (status) {
           case '조치완료': return 'bg-green-100 text-green-700';
           case '조치중': return 'bg-yellow-100 text-yellow-700';
+          case '기각': return 'bg-red-100 text-red-700';
           default: return 'bg-blue-100 text-blue-700';
         }
       };
@@ -414,14 +733,20 @@
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
         try {
-          const date = new Date(dateStr);
+          const str = String(dateStr);
+          // "2025. 12. 5. 오후" 형식 처리
+          const match = str.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+          if (match) {
+            return match[1] + '/' + match[2] + '/' + match[3];
+          }
+          // Date 객체로 시도
+          const date = new Date(str);
           if (!isNaN(date.getTime())) {
             return date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
           }
-          // 문자열에서 날짜 부분만 추출
-          return dateStr.split(' ')[0].replace(/\./g, '/').replace(/\s/g, '');
+          return str;
         } catch (e) {
-          return dateStr;
+          return String(dateStr);
         }
       };
 
@@ -504,6 +829,12 @@
                     <span className="text-gray-500 w-16 flex-shrink-0">내용</span>
                     <span className="text-gray-700">{item.content}</span>
                   </div>
+                  {item.remarks && (
+                    <div className="flex">
+                      <span className="text-gray-500 w-16 flex-shrink-0">비고</span>
+                      <span className={`${item.status === '기각' ? 'text-red-600 font-medium' : 'text-gray-700'}`}>{item.remarks}</span>
+                    </div>
+                  )}
                 </div>
                 
                 {/* 접수 사진 */}
@@ -543,6 +874,370 @@
       );
     }
 
+    function ReportTab({ submissions, loading, onRefresh }) {
+      const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear());
+      
+      // 날짜 파싱 함수
+      const parseDate = (dateStr) => {
+        if (!dateStr) return null;
+        const str = String(dateStr);
+        // "2025. 12. 5. 오후" 형식 처리
+        const match = str.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+        if (match) {
+          return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+        }
+        // 일반 Date 파싱 시도
+        const date = new Date(str);
+        if (!isNaN(date.getTime())) {
+          return date;
+        }
+        return null;
+      };
+      
+      // 연도 목록 생성
+      const years = [...new Set(submissions.map(s => {
+        const date = parseDate(s.date);
+        return date ? date.getFullYear() : new Date().getFullYear();
+      }))].sort((a, b) => b - a);
+      
+      if (years.length === 0) years.push(new Date().getFullYear());
+      
+      // 연도별 필터링
+      const filteredByYear = submissions.filter(s => {
+        const date = parseDate(s.date);
+        if (!date) return false;
+        return date.getFullYear() === selectedYear;
+      });
+
+      // 1. 월별 부서별 접수 현황 (부서=행, 월=열)
+      const getMonthlyDeptStats = () => {
+        const stats = {};
+        filteredByYear.forEach(s => {
+          const date = parseDate(s.date);
+          if (!date) return;
+          const month = date.getMonth() + 1;
+          const dept = s.department || '미지정';
+          
+          if (!stats[dept]) stats[dept] = {};
+          if (!stats[dept][month]) stats[dept][month] = 0;
+          stats[dept][month]++;
+        });
+        return stats;
+      };
+
+      // 2. 월별 조치부서별 미조치/조치완료 현황 (조치부서=행, 월=열)
+      const getMonthlyActionDeptStats = () => {
+        const stats = {};
+        filteredByYear.forEach(s => {
+          const date = parseDate(s.date);
+          if (!date) return;
+          const month = date.getMonth() + 1;
+          const actionDept = s.actionDept;
+          if (!actionDept) return;
+          const status = s.status;
+          
+          if (!stats[actionDept]) stats[actionDept] = {};
+          if (!stats[actionDept][month]) stats[actionDept][month] = { complete: 0, incomplete: 0 };
+          
+          if (status === '조치완료') {
+            stats[actionDept][month].complete++;
+          } else {
+            stats[actionDept][month].incomplete++;
+          }
+        });
+        return stats;
+      };
+
+      // 3. 인원별 접수건수 - 이름(부서) 형식, 접수/기각 구분
+      const getPersonStats = () => {
+        const stats = {};
+        filteredByYear.forEach(s => {
+          const name = s.name || '미지정';
+          const dept = s.department || '';
+          const key = dept ? `${name}(${dept})` : name;
+          const isRejected = s.status === '기각';
+          
+          if (!stats[key]) stats[key] = { total: 0, rejected: 0 };
+          stats[key].total++;
+          if (isRejected) stats[key].rejected++;
+        });
+        return Object.entries(stats)
+          .map(([name, data]) => [name, data.total - data.rejected, data.rejected, data.total])
+          .sort((a, b) => b[3] - a[3]); // 총 건수 기준 정렬
+      };
+
+      // 4. 조치담당자별 조치완료 건수 - 이름(조치부서) 형식, 팀 구분 없음
+      const getActionPersonStats = () => {
+        const stats = {};
+        filteredByYear.filter(s => s.status === '조치완료').forEach(s => {
+          const actionPerson = s.actionPerson || '미지정';
+          const actionDept = s.actionDept || '';
+          const key = actionDept ? `${actionPerson}(${actionDept})` : actionPerson;
+          if (!stats[key]) stats[key] = 0;
+          stats[key]++;
+        });
+        return Object.entries(stats).sort((a, b) => b[1] - a[1]);
+      };
+
+      const monthlyDeptStats = getMonthlyDeptStats();
+      const monthlyActionDeptStats = getMonthlyActionDeptStats();
+      const personStats = getPersonStats();
+      const actionPersonStats = getActionPersonStats();
+
+      const months = [1,2,3,4,5,6,7,8,9,10,11,12];
+
+      // 엑셀 내보내기 함수
+      const exportToExcel = () => {
+        const wb = XLSX.utils.book_new();
+
+        // 1. 월별 부서별 접수 현황 시트
+        const deptHeaders = ['부서', ...months.map(m => m + '월'), '합계'];
+        const deptRows = Object.keys(monthlyDeptStats).map(dept => {
+          const deptData = monthlyDeptStats[dept];
+          const total = months.reduce((sum, m) => sum + (deptData[m] || 0), 0);
+          return [dept, ...months.map(m => deptData[m] || 0), total];
+        });
+        const ws1 = XLSX.utils.aoa_to_sheet([deptHeaders, ...deptRows]);
+        XLSX.utils.book_append_sheet(wb, ws1, '부서별 접수현황');
+
+        // 2. 월별 조치부서별 조치 현황 시트
+        const actionHeaders = ['조치부서', ...months.flatMap(m => [m + '월 완료', m + '월 미조치']), '완료 합계', '미조치 합계'];
+        const actionRows = Object.keys(monthlyActionDeptStats).map(dept => {
+          const deptData = monthlyActionDeptStats[dept];
+          const totalComplete = months.reduce((sum, m) => sum + (deptData[m]?.complete || 0), 0);
+          const totalIncomplete = months.reduce((sum, m) => sum + (deptData[m]?.incomplete || 0), 0);
+          return [dept, ...months.flatMap(m => [deptData[m]?.complete || 0, deptData[m]?.incomplete || 0]), totalComplete, totalIncomplete];
+        });
+        const ws2 = XLSX.utils.aoa_to_sheet([actionHeaders, ...actionRows]);
+        XLSX.utils.book_append_sheet(wb, ws2, '조치부서별 현황');
+
+        // 3. 인원별 접수건수 시트 - 월별 + 접수/기각 구분
+        const personMonthlyStats = {};
+        filteredByYear.forEach(s => {
+          const date = parseDate(s.date);
+          if (!date) return;
+          const month = date.getMonth() + 1;
+          const name = s.name || '미지정';
+          const dept = s.department || '';
+          const key = name + '|||' + dept;
+          const isRejected = s.status === '기각';
+          
+          if (!personMonthlyStats[key]) personMonthlyStats[key] = { name, dept, months: {}, rejected: {} };
+          if (!personMonthlyStats[key].months[month]) personMonthlyStats[key].months[month] = 0;
+          if (!personMonthlyStats[key].rejected[month]) personMonthlyStats[key].rejected[month] = 0;
+          
+          personMonthlyStats[key].months[month]++;
+          if (isRejected) personMonthlyStats[key].rejected[month]++;
+        });
+        
+        const personHeaders = ['부서', '이름', ...months.flatMap(m => [m + '월 접수', m + '월 기각']), '총 접수', '총 기각'];
+        const personRows = Object.values(personMonthlyStats)
+          .map(p => {
+            const totalAll = months.reduce((sum, m) => sum + (p.months[m] || 0), 0);
+            const totalRejected = months.reduce((sum, m) => sum + (p.rejected[m] || 0), 0);
+            const totalAccepted = totalAll - totalRejected;
+            return [p.dept, p.name, ...months.flatMap(m => [(p.months[m] || 0) - (p.rejected[m] || 0), p.rejected[m] || 0]), totalAccepted, totalRejected];
+          })
+          .sort((a, b) => (b[b.length-2] + b[b.length-1]) - (a[a.length-2] + a[a.length-1]));
+        const ws3 = XLSX.utils.aoa_to_sheet([personHeaders, ...personRows]);
+        XLSX.utils.book_append_sheet(wb, ws3, '인원별 접수건수');
+
+        // 4. 조치담당자별 조치완료 건수 시트 - 월별
+        const actionPersonMonthlyStats = {};
+        filteredByYear.filter(s => s.status === '조치완료').forEach(s => {
+          const date = parseDate(s.date);
+          if (!date) return;
+          const month = date.getMonth() + 1;
+          const name = s.actionPerson || '미지정';
+          const dept = s.actionDept || '';
+          const key = name + '|||' + dept;
+          
+          if (!actionPersonMonthlyStats[key]) actionPersonMonthlyStats[key] = { name, dept, months: {} };
+          if (!actionPersonMonthlyStats[key].months[month]) actionPersonMonthlyStats[key].months[month] = 0;
+          actionPersonMonthlyStats[key].months[month]++;
+        });
+        
+        const actionPersonHeaders = ['부서', '이름', ...months.map(m => m + '월'), '총 건수'];
+        const actionPersonRows = Object.values(actionPersonMonthlyStats)
+          .map(p => {
+            const total = months.reduce((sum, m) => sum + (p.months[m] || 0), 0);
+            return [p.dept, p.name, ...months.map(m => p.months[m] || 0), total];
+          })
+          .sort((a, b) => b[14] - a[14]); // 총 건수 기준 정렬
+        const ws4 = XLSX.utils.aoa_to_sheet([actionPersonHeaders, ...actionPersonRows]);
+        XLSX.utils.book_append_sheet(wb, ws4, '조치담당자별 완료건수');
+
+        // 파일 다운로드
+        XLSX.writeFile(wb, `SIO_보고서_${selectedYear}년.xlsx`);
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-800">보고서</h2>
+            <div className="flex gap-2">
+              <button onClick={exportToExcel} className="flex items-center gap-1 text-green-600 p-2 hover:bg-green-50 rounded-lg text-sm">
+                <Icon name="Download" size={18} />
+                <span>내보내기</span>
+              </button>
+              <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg">
+                <Icon name="RefreshCw" size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* 필터 - 연도만 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <div className="flex gap-3 items-center">
+              <label className="text-sm text-gray-600">연도 선택</label>
+              <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="p-2 border border-gray-300 rounded-lg text-sm">
+                {years.map(y => <option key={y} value={y}>{y}년</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* 1. 월별 부서별 접수 현황 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+              <Icon name="Building" size={18} /> 월별 부서별 접수 현황
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="py-2 px-2 text-left text-gray-600 sticky left-0 bg-gray-50">부서</th>
+                    {months.map(m => (
+                      <th key={m} className="py-2 px-2 text-center text-gray-600 min-w-[40px]">{m}월</th>
+                    ))}
+                    <th className="py-2 px-2 text-center text-gray-600 font-bold">합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(monthlyDeptStats).map(dept => {
+                    const deptData = monthlyDeptStats[dept];
+                    const total = months.reduce((sum, m) => sum + (deptData[m] || 0), 0);
+                    return (
+                      <tr key={dept} className="border-b hover:bg-gray-50">
+                        <td className="py-2 px-2 font-medium sticky left-0 bg-white">{dept}</td>
+                        {months.map(m => (
+                          <td key={m} className="py-2 px-2 text-center">{deptData[m] || '-'}</td>
+                        ))}
+                        <td className="py-2 px-2 text-center font-bold text-blue-600">{total}</td>
+                      </tr>
+                    );
+                  })}
+                  {Object.keys(monthlyDeptStats).length === 0 && (
+                    <tr><td colSpan={14} className="py-4 text-center text-gray-500">데이터가 없습니다.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 2. 월별 조치부서별 조치 현황 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+              <Icon name="CheckCircle" size={18} /> 월별 조치부서별 조치 현황
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="py-2 px-2 text-left text-gray-600 sticky left-0 bg-gray-50">조치부서</th>
+                    {months.map(m => (
+                      <th key={m} className="py-2 px-1 text-center text-gray-600 min-w-[60px]">
+                        <div>{m}월</div>
+                        <div className="flex text-xs">
+                          <span className="flex-1 text-green-600">완</span>
+                          <span className="flex-1 text-red-600">미</span>
+                        </div>
+                      </th>
+                    ))}
+                    <th className="py-2 px-2 text-center text-gray-600">합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(monthlyActionDeptStats).map(dept => {
+                    const deptData = monthlyActionDeptStats[dept];
+                    const totalComplete = months.reduce((sum, m) => sum + (deptData[m]?.complete || 0), 0);
+                    const totalIncomplete = months.reduce((sum, m) => sum + (deptData[m]?.incomplete || 0), 0);
+                    return (
+                      <tr key={dept} className="border-b hover:bg-gray-50">
+                        <td className="py-2 px-2 font-medium sticky left-0 bg-white">{dept}</td>
+                        {months.map(m => (
+                          <td key={m} className="py-2 px-1 text-center">
+                            <div className="flex text-xs">
+                              <span className="flex-1 text-green-600">{deptData[m]?.complete || '-'}</span>
+                              <span className="flex-1 text-red-600">{deptData[m]?.incomplete || '-'}</span>
+                            </div>
+                          </td>
+                        ))}
+                        <td className="py-2 px-2 text-center">
+                          <span className="text-green-600 font-bold">{totalComplete}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-red-600 font-bold">{totalIncomplete}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {Object.keys(monthlyActionDeptStats).length === 0 && (
+                    <tr><td colSpan={14} className="py-4 text-center text-gray-500">데이터가 없습니다.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 3. 인원별 접수건수 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+              <Icon name="Users" size={18} /> 인원별 접수건수 ({selectedYear}년)
+            </h3>
+            <div className="space-y-2">
+              {personStats.map(([name, accepted, rejected, total], idx) => (
+                <div key={name} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs">{idx + 1}</span>
+                    <span className="font-medium">{name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-600 font-bold">{accepted}건</span>
+                    {rejected > 0 && (
+                      <>
+                        <span className="text-gray-400">/</span>
+                        <span className="text-red-500 font-bold">{rejected}기각</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {personStats.length === 0 && <p className="text-gray-500 text-center py-4">데이터가 없습니다.</p>}
+            </div>
+          </div>
+
+          {/* 4. 조치담당자별 조치완료 건수 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+              <Icon name="UserCheck" size={18} /> 조치담당자별 조치완료 건수 ({selectedYear}년)
+            </h3>
+            <div className="space-y-2">
+              {actionPersonStats.map(([name, count], idx) => (
+                <div key={name} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs">{idx + 1}</span>
+                    <span className="font-medium">{name}</span>
+                  </div>
+                  <span className="text-green-600 font-bold">{count}건</span>
+                </div>
+              ))}
+              {actionPersonStats.length === 0 && <p className="text-gray-500 text-center py-4">데이터가 없습니다.</p>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function ActionTab({ submissions, settings, deptSettings, onUpdate, loading, onRefresh }) {
       const [selectedDept, setSelectedDept] = React.useState(null);
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
@@ -553,6 +1248,7 @@
         switch (status) {
           case '조치완료': return 'bg-green-100 text-green-700 border-green-300';
           case '조치중': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+          case '기각': return 'bg-red-100 text-red-700 border-red-300';
           default: return 'bg-blue-100 text-blue-700 border-blue-300';
         }
       };
@@ -666,7 +1362,7 @@
 
       return (
         <div className="space-y-3">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치담당자</label><input type="text" value={actionPerson} onChange={(e) => setActionPerson(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="담당자 이름" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치담당자</label><input type="text" value={actionPerson} onChange={(e) => setActionPerson(e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, ''))} className="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="담당자 이름 (한글만)" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">조치내용</label><textarea value={actionContent} onChange={(e) => setActionContent(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-sm h-20 resize-none" placeholder="조치 내용을 입력하세요" /></div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">조치사진</label>
@@ -686,12 +1382,25 @@
       const [showFilter, setShowFilter] = React.useState(false);
       const [filters, setFilters] = React.useState({ department: '', category: '', location: '', status: '' });
       const [deleteTarget, setDeleteTarget] = React.useState(null);
+      const [remarksLocal, setRemarksLocal] = React.useState({});
 
       const getStatusColor = (status) => {
         switch (status) {
           case '조치완료': return 'bg-green-100 text-green-700 border-green-300';
           case '조치중': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+          case '기각': return 'bg-red-100 text-red-700 border-red-300';
           default: return 'bg-blue-100 text-blue-700 border-blue-300';
+        }
+      };
+
+      const handleRemarksChange = (id, value) => {
+        setRemarksLocal(prev => ({ ...prev, [id]: value }));
+      };
+
+      const handleRemarksBlur = (id) => {
+        const value = remarksLocal[id];
+        if (value !== undefined) {
+          onUpdate(id, { remarks: value });
         }
       };
 
@@ -727,7 +1436,7 @@
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">부서</label><select value={filters.department} onChange={(e) => setFilters({...filters, department: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></div>
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">구분</label><select value={filters.category} onChange={(e) => setFilters({...filters, category: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}</select></div>
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">장소</label><select value={filters.location} onChange={(e) => setFilters({...filters, location: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}</select></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">조치여부</label><select value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option></select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">조치여부</label><select value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option><option value="기각">기각</option></select></div>
               </div>
             </div>
           )}
@@ -744,10 +1453,11 @@
                   <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">사진</th>
                   <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">조치여부</th>
                   <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">조치부서</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">비고</th>
                   <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">삭제</th>
                 </tr></thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredSubmissions.length === 0 ? (<tr><td colSpan="10" className="px-3 py-8 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</td></tr>) : (
+                  {filteredSubmissions.length === 0 ? (<tr><td colSpan="11" className="px-3 py-8 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</td></tr>) : (
                     filteredSubmissions.slice().reverse().map((item) => (
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.date}</td>
@@ -757,8 +1467,9 @@
                         <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.location}</td>
                         <td className="px-2 py-3 text-sm text-gray-600 max-w-[150px] truncate" title={item.content}>{item.content}</td>
                         <td className="px-2 py-3 text-center">{item.photo ? <button onClick={() => setSelectedPhoto(item.photo)} className="text-blue-500"><Icon name="Image" size={20} /></button> : <span className="text-gray-300">-</span>}</td>
-                        <td className="px-2 py-3 text-center"><select value={item.status} onChange={(e) => onUpdate(item.id, { status: e.target.value })} className={`px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(item.status)} cursor-pointer`}><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option></select></td>
+                        <td className="px-2 py-3 text-center"><select value={item.status} onChange={(e) => onUpdate(item.id, { status: e.target.value })} className={`px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(item.status)} cursor-pointer`}><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option><option value="기각">기각</option></select></td>
                         <td className="px-2 py-3 text-center"><select value={item.actionDept || ''} onChange={(e) => { const val = e.target.value; onUpdate(item.id, { actionDept: val, status: val && item.status === '접수완료' ? '조치중' : item.status }); }} className="px-2 py-1 rounded-lg text-xs border border-gray-300 bg-white cursor-pointer"><option value="">선택</option>{settings.actionDepts.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
+                        <td className="px-2 py-3"><input type="text" value={remarksLocal[item.id] !== undefined ? remarksLocal[item.id] : (item.remarks || '')} onChange={(e) => handleRemarksChange(item.id, e.target.value)} onBlur={() => handleRemarksBlur(item.id)} placeholder="비고 입력" className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg" /></td>
                         <td className="px-2 py-3 text-center"><button onClick={() => setDeleteTarget(item.id)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={18} /></button></td>
                       </tr>
                     ))
