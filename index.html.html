@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIO 접수 시스템</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 70% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+    .pop-in { animation: popIn 0.4s ease-out; }
+    @keyframes checkmark { 0% { stroke-dashoffset: 100; } 100% { stroke-dashoffset: 0; } }
+    .checkmark-circle { animation: popIn 0.4s ease-out; }
+    .checkmark-check { stroke-dasharray: 100; animation: checkmark 0.6s ease-out 0.3s forwards; stroke-dashoffset: 100; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const API_URL = 'https://script.google.com/macros/s/AKfycbw-TetRmS_y9zZz5DABUXpJ4Ev3UliC0tVkmCVws2lb_OA9QOaH9FyhpXd09mZNo8NcWw/exec';
+
+    const convertDriveUrl = (url) => {
+      if (!url) return '';
+      const match = url.match(/[?&]id=([^&]+)/);
+      if (match) return `https://lh3.googleusercontent.com/d/${match[1]}`;
+      return url;
+    };
+
+    const Icon = ({ name, size = 24, className = "" }) => {
+      const ref = React.useRef();
+      React.useEffect(() => {
+        if (ref.current) {
+          ref.current.innerHTML = '';
+          const icon = lucide.createElement(lucide.icons[name]);
+          icon.setAttribute('width', size);
+          icon.setAttribute('height', size);
+          if (className) icon.setAttribute('class', className);
+          ref.current.appendChild(icon);
+        }
+      }, [name, size, className]);
+      return <span ref={ref} className="inline-flex items-center justify-center"></span>;
+    };
+
+    function SuccessModal({ onClose }) {
+      React.useEffect(() => { const timer = setTimeout(onClose, 2500); return () => clearTimeout(timer); }, [onClose]);
+      return (
+        <div className="fixed inset-0 bg-green-500 flex flex-col items-center justify-center z-50" onClick={onClose}>
+          <div className="pop-in flex flex-col items-center">
+            <svg className="w-32 h-32 mb-6" viewBox="0 0 100 100">
+              <circle className="checkmark-circle" cx="50" cy="50" r="45" fill="none" stroke="white" strokeWidth="6"/>
+              <path className="checkmark-check" d="M30 50 L45 65 L70 35" fill="none" stroke="white" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <h1 className="text-white text-3xl font-bold mb-2">접수 완료!</h1>
+            <p className="text-green-100 text-lg">SIO가 성공적으로 접수되었습니다</p>
+          </div>
+          <p className="absolute bottom-10 text-green-200 text-sm">화면을 터치하면 닫힙니다</p>
+        </div>
+      );
+    }
+
+    function ConfirmModal({ message, onConfirm, onCancel }) {
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full">
+            <p className="text-gray-800 text-center mb-6">{message}</p>
+            <div className="flex gap-3">
+              <button onClick={onCancel} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600 font-medium">취소</button>
+              <button onClick={onConfirm} className="flex-1 py-3 bg-red-500 text-white rounded-lg font-medium">삭제</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function AlertModal({ message, onClose, type = 'info' }) {
+      const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full">
+            <div className={`w-16 h-16 ${bgColor} rounded-full flex items-center justify-center mx-auto mb-4`}>
+              <Icon name={type === 'success' ? 'Check' : type === 'error' ? 'X' : 'Mail'} size={32} className="text-white" />
+            </div>
+            <p className="text-gray-800 text-center mb-6">{message}</p>
+            <button onClick={onClose} className="w-full py-3 bg-gray-800 text-white rounded-lg font-medium">확인</button>
+          </div>
+        </div>
+      );
+    }
+
+    function PasswordModal({ department, onConfirm, onCancel }) {
+      const [password, setPassword] = React.useState('');
+      const [error, setError] = React.useState(false);
+      const [checking, setChecking] = React.useState(false);
+
+      const handleSubmit = async () => {
+        setChecking(true);
+        setError(false);
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'verifyPassword', department, password })
+          });
+          const result = await response.json();
+          if (result.success && result.verified) {
+            onConfirm();
+          } else {
+            setError(true);
+            setPassword('');
+          }
+        } catch (err) {
+          setError(true);
+        }
+        setChecking(false);
+      };
+
+      const handleKeyDown = (e) => { if (e.key === 'Enter') handleSubmit(); };
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full">
+            <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Icon name="Lock" size={32} className="text-white" />
+            </div>
+            <h3 className="text-lg font-bold text-center text-gray-800 mb-2">{department}</h3>
+            <p className="text-gray-500 text-center text-sm mb-4">비밀번호를 입력하세요</p>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKeyDown}
+              className={`w-full p-3 border rounded-lg mb-3 text-center text-lg tracking-widest ${error ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+              placeholder="••••" autoFocus />
+            {error && <p className="text-red-500 text-sm text-center mb-3">비밀번호가 일치하지 않습니다</p>}
+            <div className="flex gap-3">
+              <button onClick={onCancel} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600 font-medium">취소</button>
+              <button onClick={handleSubmit} disabled={checking} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium disabled:bg-gray-400">
+                {checking ? '확인 중...' : '확인'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [activeTab, setActiveTab] = React.useState('submit');
+      const [submissions, setSubmissions] = React.useState([]);
+      const [loading, setLoading] = React.useState(false);
+      const [error, setError] = React.useState(null);
+      
+      const [settings, setSettings] = React.useState({
+        departments: ['생산팀', '품질팀', '안전팀', '관리팀'],
+        categories: ['안전', '품질', '환경', '기타'],
+        locations: ['생산1라인', '생산2라인', '사무실', '창고', '야외'],
+        actionDepts: ['생산팀', '품질팀', '안전팀', '관리팀', '시설팀', '환경팀']
+      });
+
+      const [deptSettings, setDeptSettings] = React.useState([]);
+
+      const fetchData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const response = await fetch(API_URL);
+          const result = await response.json();
+          if (result.success) {
+            const formattedData = result.data.map(item => ({
+              id: item.ID || item.id,
+              date: item['접수일자'] || item.date,
+              name: item['이름'] || item.name,
+              department: item['부서'] || item.department,
+              category: item['구분'] || item.category,
+              location: item['장소'] || item.location,
+              content: item['내용'] || item.content,
+              status: item['조치여부'] || item.status,
+              actionDept: item['조치부서'] || item.actionDept || '',
+              actionPerson: item['조치담당자'] || item.actionPerson || '',
+              actionContent: item['조치내용'] || item.actionContent || '',
+              actionPhoto: item['조치사진URL'] || item.actionPhoto || '',
+              photo: item['사진URL'] || item.photo
+            }));
+            setSubmissions(formattedData);
+          }
+        } catch (err) {
+          setError('서버 연결에 실패했습니다.');
+        }
+        setLoading(false);
+      };
+
+      const fetchDeptSettings = async () => {
+        try {
+          const response = await fetch(API_URL + '?type=deptSettings');
+          const result = await response.json();
+          if (result.success) setDeptSettings(result.data);
+        } catch (err) { console.error(err); }
+      };
+
+      React.useEffect(() => { fetchData(); fetchDeptSettings(); }, []);
+
+      const handleNewSubmission = async (data) => {
+        setLoading(true);
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'add',
+              data: { date: new Date().toLocaleString('ko-KR'), ...data, status: '접수완료', actionDept: '', actionPerson: '', actionContent: '' }
+            })
+          });
+          const result = await response.json();
+          if (result.success) { await fetchData(); return true; }
+        } catch (err) { setError('접수 저장에 실패했습니다.'); }
+        setLoading(false);
+        return false;
+      };
+
+      const handleDelete = async (id) => {
+        setLoading(true);
+        try {
+          await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete', id }) });
+          await fetchData();
+        } catch (err) { setError('삭제에 실패했습니다.'); }
+        setLoading(false);
+      };
+
+      const handleUpdate = async (id, data) => {
+        try {
+          await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update', id, data }) });
+          if (data.actionPhoto && data.actionPhoto.includes('base64,')) {
+            await fetchData();
+          } else {
+            setSubmissions(submissions.map(s => s.id.toString() === id.toString() ? { ...s, ...data } : s));
+          }
+        } catch (err) { setError('변경에 실패했습니다.'); }
+      };
+
+      const handleSaveDeptSettings = async (newSettings) => {
+        setLoading(true);
+        try {
+          await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'saveDeptSettings', settings: newSettings }) });
+          setDeptSettings(newSettings);
+        } catch (err) { setError('설정 저장에 실패했습니다.'); }
+        setLoading(false);
+      };
+
+      const handleSendNotifications = async () => {
+        setLoading(true);
+        try {
+          const response = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'sendNotifications' }) });
+          const result = await response.json();
+          setLoading(false);
+          return result;
+        } catch (err) {
+          setLoading(false);
+          return { success: false, error: '발송에 실패했습니다.' };
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-100">
+          <header className="bg-blue-600 text-white p-4 shadow-lg">
+            <h1 className="text-xl font-bold text-center">SIO 접수 시스템</h1>
+          </header>
+
+          {error && (
+            <div className="mx-4 mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-center">
+              {error}<button onClick={() => setError(null)} className="ml-2 underline">닫기</button>
+            </div>
+          )}
+
+          <main className="p-4 pb-24">
+            {activeTab === 'submit' && <SubmitForm settings={settings} onSubmit={handleNewSubmission} loading={loading} />}
+            {activeTab === 'list' && <SubmissionList submissions={submissions} loading={loading} onRefresh={fetchData} />}
+            {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
+            {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
+            {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendNotifications={handleSendNotifications} submissions={submissions} />}
+          </main>
+
+          <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
+            <div className="flex justify-around">
+              <NavButton icon="ClipboardList" label="접수" active={activeTab === 'submit'} onClick={() => setActiveTab('submit')} />
+              <NavButton icon="List" label="목록" active={activeTab === 'list'} onClick={() => setActiveTab('list')} />
+              <NavButton icon="Wrench" label="조치" active={activeTab === 'action'} onClick={() => setActiveTab('action')} />
+              <NavButton icon="Shield" label="관리" active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} />
+              <NavButton icon="Settings" label="설정" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+            </div>
+          </nav>
+
+          {loading && (
+            <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+              <div className="bg-white p-4 rounded-xl shadow-lg flex items-center gap-3">
+                <div className="spinner"><Icon name="Loader2" size={24} /></div>
+                <span>처리 중...</span>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function NavButton({ icon, label, active, onClick }) {
+      return (
+        <button onClick={onClick} className={`flex flex-col items-center py-2 px-2 ${active ? 'text-blue-600' : 'text-gray-500'}`}>
+          <Icon name={icon} size={20} />
+          <span className="text-xs mt-1">{label}</span>
+        </button>
+      );
+    }
+
+    function SubmitForm({ settings, onSubmit, loading }) {
+      const [formData, setFormData] = React.useState({ name: '', department: '', category: '', location: '', content: '', photo: null });
+      const [photoPreview, setPhotoPreview] = React.useState(null);
+      const [showSuccess, setShowSuccess] = React.useState(false);
+
+      const handlePhotoChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => { setPhotoPreview(reader.result); setFormData({ ...formData, photo: reader.result }); };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const handleSubmit = async () => {
+        if (!formData.name || !formData.department || !formData.category || !formData.location || !formData.content) {
+          alert('모든 필수 항목을 입력해주세요.'); return;
+        }
+        const success = await onSubmit(formData);
+        if (success) {
+          setFormData({ name: '', department: '', category: '', location: '', content: '', photo: null });
+          setPhotoPreview(null);
+          setShowSuccess(true);
+        }
+      };
+
+      return (
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <h2 className="text-lg font-bold mb-6 text-gray-800">SIO 접수</h2>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">이름 * <span className="text-gray-400 text-xs">(한글만 입력)</span></label>
+              <input type="text" value={formData.name} onChange={(e) => {
+                const value = e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, '');
+                setFormData({ ...formData, name: value });
+              }}
+                className="w-full p-3 border border-gray-300 rounded-lg" placeholder="이름을 입력하세요" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">부서 *</label>
+              <select value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                className="w-full p-3 border border-gray-300 rounded-lg bg-white">
+                <option value="">부서를 선택하세요</option>
+                {settings.departments.map((dept, idx) => <option key={idx} value={dept}>{dept}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">구분 *</label>
+              <select value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="w-full p-3 border border-gray-300 rounded-lg bg-white">
+                <option value="">구분을 선택하세요</option>
+                {settings.categories.map((cat, idx) => <option key={idx} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">장소 *</label>
+              <select value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                className="w-full p-3 border border-gray-300 rounded-lg bg-white">
+                <option value="">장소를 선택하세요</option>
+                {settings.locations.map((loc, idx) => <option key={idx} value={loc}>{loc}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">내용 *</label>
+              <textarea value={formData.content} onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                className="w-full p-3 border border-gray-300 rounded-lg h-32 resize-none" placeholder="상세 내용을 입력하세요" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">사진</label>
+              {photoPreview ? (
+                <div className="relative">
+                  <img src={photoPreview} alt="Preview" className="w-full h-48 object-cover rounded-lg" />
+                  <button type="button" onClick={() => { setPhotoPreview(null); setFormData({ ...formData, photo: null }); }} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><Icon name="X" size={20} /></button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500">
+                  <Icon name="Camera" size={32} className="text-gray-400 mb-2" />
+                  <span className="text-sm text-gray-500">사진 첨부하기</span>
+                  <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                </label>
+              )}
+            </div>
+            <button type="button" onClick={handleSubmit} disabled={loading}
+              className="w-full bg-blue-600 text-white py-4 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400">접수하기</button>
+          </div>
+          {showSuccess && <SuccessModal onClose={() => setShowSuccess(false)} />}
+        </div>
+      );
+    }
+
+    function SubmissionList({ submissions, loading, onRefresh }) {
+      const [selectedPhoto, setSelectedPhoto] = React.useState(null);
+      const [searchText, setSearchText] = React.useState('');
+      
+      const getStatusColor = (status) => {
+        switch (status) {
+          case '조치완료': return 'bg-green-100 text-green-700';
+          case '조치중': return 'bg-yellow-100 text-yellow-700';
+          default: return 'bg-blue-100 text-blue-700';
+        }
+      };
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        try {
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) {
+            return date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
+          }
+          // 문자열에서 날짜 부분만 추출
+          return dateStr.split(' ')[0].replace(/\./g, '/').replace(/\s/g, '');
+        } catch (e) {
+          return dateStr;
+        }
+      };
+
+      // 검색 필터링 (이름, 부서 제외)
+      const filteredSubmissions = submissions.filter(item => {
+        if (!searchText.trim()) return true;
+        const search = searchText.toLowerCase();
+        const checkField = (field) => field && String(field).toLowerCase().includes(search);
+        return (
+          checkField(item.content) ||
+          checkField(item.location) ||
+          checkField(item.category) ||
+          checkField(item.actionDept) ||
+          checkField(item.actionContent)
+        );
+      });
+
+      if (submissions.length === 0 && !loading) {
+        return (
+          <div className="bg-white rounded-xl shadow-md p-6 text-center">
+            <Icon name="List" size={64} className="mx-auto text-gray-300 mb-4" />
+            <p className="text-gray-500">접수된 SIO가 없습니다.</p>
+            <button onClick={onRefresh} className="mt-4 text-blue-600 flex items-center gap-2 mx-auto"><Icon name="RefreshCw" size={16} /> 새로고침</button>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-800">접수 목록 ({filteredSubmissions.length}건)</h2>
+            <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
+          </div>
+          
+          {/* 검색창 */}
+          <div className="relative">
+            <Icon name="Search" size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input 
+              type="text" 
+              value={searchText} 
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="내용, 장소, 구분 검색..." 
+              className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            {searchText && (
+              <button onClick={() => setSearchText('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <Icon name="X" size={18} />
+              </button>
+            )}
+          </div>
+          
+          {/* 검색 결과 없음 */}
+          {filteredSubmissions.length === 0 && searchText && (
+            <div className="bg-white rounded-xl shadow-md p-6 text-center">
+              <Icon name="Search" size={48} className="mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-500">'{searchText}' 검색 결과가 없습니다.</p>
+            </div>
+          )}
+          
+          <div className="space-y-3">
+            {filteredSubmissions.slice().reverse().map((item) => (
+              <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
+                {/* 상태 표시 */}
+                <div className="flex justify-between items-center mb-3">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>{item.status}</span>
+                  {item.actionDept && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">{item.actionDept}</span>}
+                </div>
+                
+                {/* 기본 정보 */}
+                <div className="space-y-1 text-sm">
+                  <div className="flex">
+                    <span className="text-gray-500 w-16 flex-shrink-0">접수일자</span>
+                    <span className="text-gray-700">{formatDate(item.date)}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="text-gray-500 w-16 flex-shrink-0">장소</span>
+                    <span className="text-gray-700">{item.location}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="text-gray-500 w-16 flex-shrink-0">내용</span>
+                    <span className="text-gray-700">{item.content}</span>
+                  </div>
+                </div>
+                
+                {/* 접수 사진 */}
+                {item.photo && (
+                  <div className="mt-3">
+                    <img src={convertDriveUrl(item.photo)} alt="접수사진" onClick={() => setSelectedPhoto(item.photo)}
+                      className="w-full h-40 object-cover rounded-lg cursor-pointer" />
+                  </div>
+                )}
+                
+                {/* 조치 정보 */}
+                {(item.actionContent || item.actionPhoto) && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <p className="text-xs font-medium text-gray-500 mb-2">조치 정보</p>
+                    {item.actionContent && (
+                      <p className="text-sm text-gray-700 mb-2">{item.actionContent}</p>
+                    )}
+                    {item.actionPhoto && (
+                      <img src={convertDriveUrl(item.actionPhoto)} alt="조치사진" onClick={() => setSelectedPhoto(item.actionPhoto)}
+                        className="w-full h-40 object-cover rounded-lg cursor-pointer" />
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          
+          {selectedPhoto && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPhoto(null)}>
+              <div className="relative max-w-3xl max-h-full">
+                <img src={convertDriveUrl(selectedPhoto)} alt="사진" className="max-w-full max-h-[80vh] object-contain rounded-lg bg-white" />
+                <button onClick={() => setSelectedPhoto(null)} className="absolute top-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg"><Icon name="X" size={24} /></button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function ActionTab({ submissions, settings, deptSettings, onUpdate, loading, onRefresh }) {
+      const [selectedDept, setSelectedDept] = React.useState(null);
+      const [selectedPhoto, setSelectedPhoto] = React.useState(null);
+      const [passwordDept, setPasswordDept] = React.useState(null);
+
+      const filteredSubmissions = selectedDept ? submissions.filter(s => s.actionDept === selectedDept) : [];
+      const getStatusColor = (status) => {
+        switch (status) {
+          case '조치완료': return 'bg-green-100 text-green-700 border-green-300';
+          case '조치중': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+          default: return 'bg-blue-100 text-blue-700 border-blue-300';
+        }
+      };
+
+      const handleDeptClick = (dept) => {
+        const deptSetting = deptSettings.find(d => d.department === dept);
+        if (deptSetting && deptSetting.password) { setPasswordDept(dept); }
+        else { setSelectedDept(dept); }
+      };
+
+      if (!selectedDept) {
+        return (
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold text-gray-800 text-center">조치</h2>
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <p className="text-center text-gray-600 mb-6">해당 부서를 선택하세요</p>
+              <div className="grid grid-cols-2 gap-3">
+                {settings.actionDepts.map((dept, idx) => {
+                  const count = submissions.filter(s => s.actionDept === dept && s.status !== '조치완료').length;
+                  const hasPassword = deptSettings.find(d => d.department === dept)?.password;
+                  return (
+                    <button key={idx} onClick={() => handleDeptClick(dept)}
+                      className="p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                      <div className="font-bold text-gray-800 flex items-center justify-center gap-1">
+                        {dept}{hasPassword && <Icon name="Lock" size={14} className="text-gray-400" />}
+                      </div>
+                      {count > 0 && <div className="text-sm text-red-500 mt-1">미조치 {count}건</div>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {passwordDept && <PasswordModal department={passwordDept} onConfirm={() => { setSelectedDept(passwordDept); setPasswordDept(null); }} onCancel={() => setPasswordDept(null)} />}
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setSelectedDept(null)} className="text-gray-500 p-2 hover:bg-gray-100 rounded-lg"><Icon name="ArrowLeft" size={20} /></button>
+              <h2 className="text-lg font-bold text-gray-800">{selectedDept} 조치목록</h2>
+            </div>
+            <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
+          </div>
+          {filteredSubmissions.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-md p-6 text-center">
+              <Icon name="CheckCircle" size={64} className="mx-auto text-green-300 mb-4" />
+              <p className="text-gray-500">할당된 조치 항목이 없습니다.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredSubmissions.slice().reverse().map((item) => (
+                <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div><span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>{item.status}</span><span className="ml-2 text-sm text-gray-500">{item.date}</span></div>
+                    <span className="text-sm bg-gray-100 px-2 py-1 rounded">{item.category}</span>
+                  </div>
+                  <div className="mb-3"><p className="text-sm text-gray-500">장소: {item.location}</p><p className="text-gray-800 mt-1">{item.content}</p></div>
+                  {item.photo && (<div className="mb-3"><p className="text-sm text-gray-500 mb-1">접수 사진</p><img src={convertDriveUrl(item.photo)} alt="접수사진" onClick={() => setSelectedPhoto(item.photo)} className="w-full h-32 object-cover rounded-lg cursor-pointer" /></div>)}
+                  <div className="border-t pt-3 mt-3"><ActionForm item={item} onUpdate={onUpdate} /></div>
+                </div>
+              ))}
+            </div>
+          )}
+          {selectedPhoto && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPhoto(null)}>
+              <div className="relative max-w-3xl max-h-full">
+                <img src={convertDriveUrl(selectedPhoto)} alt="사진" className="max-w-full max-h-[80vh] object-contain rounded-lg bg-white" />
+                <button onClick={() => setSelectedPhoto(null)} className="absolute top-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg"><Icon name="X" size={24} /></button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function ActionForm({ item, onUpdate }) {
+      const [actionContent, setActionContent] = React.useState(item.actionContent || '');
+      const [actionPerson, setActionPerson] = React.useState(item.actionPerson || '');
+      const [actionPhotoPreview, setActionPhotoPreview] = React.useState(item.actionPhoto ? convertDriveUrl(item.actionPhoto) : null);
+      const [newActionPhoto, setNewActionPhoto] = React.useState(null);
+      const [saving, setSaving] = React.useState(false);
+
+      const handlePhotoChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => { setActionPhotoPreview(reader.result); setNewActionPhoto(reader.result); };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const handleSave = async () => {
+        setSaving(true);
+        const updateData = { actionContent, actionPerson, status: item.status === '접수완료' ? '조치중' : item.status };
+        if (newActionPhoto) updateData.actionPhoto = newActionPhoto;
+        await onUpdate(item.id, updateData);
+        setSaving(false); setNewActionPhoto(null);
+      };
+
+      const handleComplete = async () => {
+        if (!actionContent || !actionPerson) { alert('조치내용과 조치담당자를 입력해주세요.'); return; }
+        setSaving(true);
+        const updateData = { actionContent, actionPerson, status: '조치완료' };
+        if (newActionPhoto) updateData.actionPhoto = newActionPhoto;
+        await onUpdate(item.id, updateData);
+        setSaving(false); setNewActionPhoto(null);
+      };
+
+      return (
+        <div className="space-y-3">
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치담당자</label><input type="text" value={actionPerson} onChange={(e) => setActionPerson(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="담당자 이름" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치내용</label><textarea value={actionContent} onChange={(e) => setActionContent(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-sm h-20 resize-none" placeholder="조치 내용을 입력하세요" /></div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">조치사진</label>
+            {actionPhotoPreview ? (<div className="relative"><img src={actionPhotoPreview} alt="조치사진" className="w-full h-32 object-cover rounded-lg" /><button type="button" onClick={() => { setActionPhotoPreview(null); setNewActionPhoto(null); }} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><Icon name="X" size={16} /></button></div>
+            ) : (<label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500"><Icon name="Camera" size={24} className="text-gray-400" /><span className="text-xs text-gray-500">사진 첨부</span><input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" /></label>)}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleSave} disabled={saving} className="flex-1 py-2 border border-blue-600 text-blue-600 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
+            <button onClick={handleComplete} disabled={saving} className="flex-1 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">조치완료</button>
+          </div>
+        </div>
+      );
+    }
+
+    function AdminList({ submissions, settings, onDelete, onUpdate, loading, onRefresh }) {
+      const [selectedPhoto, setSelectedPhoto] = React.useState(null);
+      const [showFilter, setShowFilter] = React.useState(false);
+      const [filters, setFilters] = React.useState({ department: '', category: '', location: '', status: '' });
+      const [deleteTarget, setDeleteTarget] = React.useState(null);
+
+      const getStatusColor = (status) => {
+        switch (status) {
+          case '조치완료': return 'bg-green-100 text-green-700 border-green-300';
+          case '조치중': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+          default: return 'bg-blue-100 text-blue-700 border-blue-300';
+        }
+      };
+
+      const filteredSubmissions = submissions.filter(item => {
+        if (filters.department && item.department !== filters.department) return false;
+        if (filters.category && item.category !== filters.category) return false;
+        if (filters.location && item.location !== filters.location) return false;
+        if (filters.status && item.status !== filters.status) return false;
+        return true;
+      });
+
+      const activeFilterCount = Object.values(filters).filter(v => v !== '').length;
+
+      if (submissions.length === 0 && !loading) {
+        return (<div className="bg-white rounded-xl shadow-md p-6 text-center"><Icon name="Shield" size={64} className="mx-auto text-gray-300 mb-4" /><p className="text-gray-500">접수된 SIO가 없습니다.</p><button onClick={onRefresh} className="mt-4 text-blue-600 flex items-center gap-2 mx-auto"><Icon name="RefreshCw" size={16} /> 새로고침</button></div>);
+      }
+
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-800">관리 목록 ({filteredSubmissions.length}건)</h2>
+            <div className="flex gap-2">
+              <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
+              <button onClick={() => setShowFilter(!showFilter)} className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition-colors ${showFilter ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border'}`}>
+                <Icon name="Filter" size={18} />필터{activeFilterCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilterCount}</span>}
+              </button>
+            </div>
+          </div>
+          {showFilter && (
+            <div className="bg-white rounded-xl shadow-md p-4">
+              <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-700 flex items-center gap-2"><Icon name="Filter" size={18} /> 필터 설정</h3><button onClick={() => setFilters({ department: '', category: '', location: '', status: '' })} className="flex items-center gap-1 text-sm text-gray-500"><Icon name="RotateCcw" size={14} /> 초기화</button></div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">부서</label><select value={filters.department} onChange={(e) => setFilters({...filters, department: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">구분</label><select value={filters.category} onChange={(e) => setFilters({...filters, category: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}</select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">장소</label><select value={filters.location} onChange={(e) => setFilters({...filters, location: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}</select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">조치여부</label><select value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option></select></div>
+              </div>
+            </div>
+          )}
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1000px]">
+                <thead className="bg-gray-50 border-b"><tr>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">접수일자</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">이름</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">부서</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">구분</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">장소</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">내용</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">사진</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">조치여부</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">조치부서</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">삭제</th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredSubmissions.length === 0 ? (<tr><td colSpan="10" className="px-3 py-8 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</td></tr>) : (
+                    filteredSubmissions.slice().reverse().map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50">
+                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.date}</td>
+                        <td className="px-2 py-3 text-sm text-gray-800 font-medium whitespace-nowrap">{item.name}</td>
+                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.department}</td>
+                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.category}</td>
+                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.location}</td>
+                        <td className="px-2 py-3 text-sm text-gray-600 max-w-[150px] truncate" title={item.content}>{item.content}</td>
+                        <td className="px-2 py-3 text-center">{item.photo ? <button onClick={() => setSelectedPhoto(item.photo)} className="text-blue-500"><Icon name="Image" size={20} /></button> : <span className="text-gray-300">-</span>}</td>
+                        <td className="px-2 py-3 text-center"><select value={item.status} onChange={(e) => onUpdate(item.id, { status: e.target.value })} className={`px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(item.status)} cursor-pointer`}><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option></select></td>
+                        <td className="px-2 py-3 text-center"><select value={item.actionDept || ''} onChange={(e) => { const val = e.target.value; onUpdate(item.id, { actionDept: val, status: val && item.status === '접수완료' ? '조치중' : item.status }); }} className="px-2 py-1 rounded-lg text-xs border border-gray-300 bg-white cursor-pointer"><option value="">선택</option>{settings.actionDepts.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
+                        <td className="px-2 py-3 text-center"><button onClick={() => setDeleteTarget(item.id)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={18} /></button></td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {selectedPhoto && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPhoto(null)}><div className="relative max-w-3xl max-h-full"><img src={convertDriveUrl(selectedPhoto)} alt="사진" className="max-w-full max-h-[80vh] object-contain rounded-lg bg-white" /><button onClick={() => setSelectedPhoto(null)} className="absolute top-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg"><Icon name="X" size={24} /></button></div></div>)}
+          {deleteTarget && <ConfirmModal message="정말 삭제하시겠습니까?" onConfirm={() => { onDelete(deleteTarget); setDeleteTarget(null); }} onCancel={() => setDeleteTarget(null)} />}
+        </div>
+      );
+    }
+
+    function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendNotifications, submissions }) {
+      const [newItem, setNewItem] = React.useState({ departments: '', categories: '', locations: '', actionDepts: '' });
+      const [localDeptSettings, setLocalDeptSettings] = React.useState([]);
+      const [showEmailPreview, setShowEmailPreview] = React.useState(false);
+      const [alertModal, setAlertModal] = React.useState(null);
+      const [showPasswords, setShowPasswords] = React.useState({});
+
+      React.useEffect(() => {
+        const settingsMap = {};
+        deptSettings.forEach(s => { settingsMap[s.department] = s; });
+        setLocalDeptSettings(settings.actionDepts.map(dept => ({
+          department: dept,
+          email: settingsMap[dept]?.email || '',
+          password: settingsMap[dept]?.password || ''
+        })));
+      }, [deptSettings, settings.actionDepts]);
+
+      const addItem = (key) => {
+        if (newItem[key].trim()) {
+          setSettings({ ...settings, [key]: [...settings[key], newItem[key].trim()] });
+          setNewItem({ ...newItem, [key]: '' });
+        }
+      };
+
+      const removeItem = (key, index) => setSettings({ ...settings, [key]: settings[key].filter((_, i) => i !== index) });
+
+      const updateDeptSetting = (dept, field, value) => setLocalDeptSettings(localDeptSettings.map(s => s.department === dept ? { ...s, [field]: value } : s));
+
+      const saveSettings = async () => {
+        await onSaveDeptSettings(localDeptSettings);
+        setAlertModal({ message: '설정이 저장되었습니다.', type: 'success' });
+      };
+
+      const sendNotifications = async () => {
+        const pendingCount = submissions.filter(s => s.actionDept && s.status !== '조치완료').length;
+        if (pendingCount === 0) { setAlertModal({ message: '미조치 사항이 없습니다.', type: 'info' }); return; }
+        const result = await onSendNotifications();
+        setAlertModal({ message: result.success ? result.message : (result.error || '발송에 실패했습니다.'), type: result.success ? 'success' : 'error' });
+      };
+
+      const getPendingCount = (dept) => submissions.filter(s => s.actionDept === dept && s.status !== '조치완료').length;
+
+      const sections = [
+        { key: 'departments', label: '부서' },
+        { key: 'categories', label: '구분' },
+        { key: 'locations', label: '장소' },
+        { key: 'actionDepts', label: '조치부서' }
+      ];
+
+      return (
+        <div className="space-y-6">
+          <h2 className="text-lg font-bold text-gray-800">설정</h2>
+
+          {/* 부서 설정 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 조치부서 설정</h3>
+            <div className="space-y-4">
+              {localDeptSettings.map((item, idx) => (
+                <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-medium text-gray-700">{item.department}</span>
+                    {getPendingCount(item.department) > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{getPendingCount(item.department)}</span>}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Icon name="Mail" size={16} className="text-gray-400" />
+                      <input type="email" value={item.email} onChange={(e) => updateDeptSetting(item.department, 'email', e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="이메일 (쉼표로 여러명)" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Icon name="Lock" size={16} className="text-gray-400" />
+                      <div className="flex-1 relative">
+                        <input type={showPasswords[item.department] ? 'text' : 'password'} value={item.password} onChange={(e) => updateDeptSetting(item.department, 'password', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded-lg text-sm pr-10" placeholder="비밀번호 (선택)" />
+                        <button type="button" onClick={() => setShowPasswords({ ...showPasswords, [item.department]: !showPasswords[item.department] })}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><Icon name={showPasswords[item.department] ? 'EyeOff' : 'Eye'} size={18} /></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 이메일 미리보기 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-700 flex items-center gap-2"><Icon name="Mail" size={20} /> 이메일 알림</h3>
+              <button onClick={() => setShowEmailPreview(!showEmailPreview)} className={`flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium ${showEmailPreview ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                <Icon name="Eye" size={16} /> 미리보기
+              </button>
+            </div>
+
+            {showEmailPreview && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                <div className="text-sm text-gray-600 mb-3 pb-2 border-b">
+                  <strong>제목:</strong> [SIO] 생산팀 미조치 사항 2건 알림
+                </div>
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{`안녕하세요,
+
+현재 생산팀에 할당된 미조치 SIO가 2건 있습니다.
+
+──────────────────────────────
+
+1. [2024/1/15] 생산1라인
+   구분: 안전 | 상태: 접수완료
+   내용: 바닥 미끄러움 발생
+
+2. [2024/1/14] 창고
+   구분: 환경 | 상태: 조치중
+   내용: 조명 불량
+
+──────────────────────────────
+
+SIO 시스템에서 확인 및 조치 부탁드립니다.
+감사합니다.`}</pre>
+              </div>
+            )}
+
+            <p className="text-sm text-gray-500 mb-4">미조치 사항이 있는 부서에 위 형식의 이메일을 발송합니다.</p>
+          </div>
+
+          {/* 저장 & 발송 버튼 */}
+          <div className="flex gap-2">
+            <button onClick={saveSettings} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
+              <Icon name="Save" size={18} /> 설정 저장
+            </button>
+            <button onClick={sendNotifications} className="flex-1 py-3 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 flex items-center justify-center gap-2">
+              <Icon name="Send" size={18} /> 알림 발송
+            </button>
+          </div>
+
+          {/* 목록 관리 */}
+          {sections.map(({ key, label }) => (
+            <div key={key} className="bg-white rounded-xl shadow-md p-4">
+              <h3 className="font-bold text-gray-700 mb-3">{label} 목록</h3>
+              <div className="flex gap-2 mb-3">
+                <input type="text" value={newItem[key]} onChange={(e) => setNewItem({ ...newItem, [key]: e.target.value })}
+                  className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder={`새 ${label} 추가`}
+                  onKeyPress={(e) => e.key === 'Enter' && addItem(key)} />
+                <button onClick={() => addItem(key)} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"><Icon name="Plus" size={20} /></button>
+              </div>
+              <div className="space-y-2">
+                {settings[key].map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
+                    <span className="text-sm text-gray-700">{item}</span>
+                    <button onClick={() => removeItem(key, idx)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {alertModal && <AlertModal message={alertModal.message} type={alertModal.type} onClose={() => setAlertModal(null)} />}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
