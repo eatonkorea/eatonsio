@@ -24,7 +24,7 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const API_URL = 'https://script.google.com/macros/s/AKfycbypyEcZriSQFZMBIy-irFFKuVtmUfqgPrJkz3tILpXj91pR5n7K5NhtL55y42MstfFcPw/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbzncUqiFYJ99Ra18KMqw73WScQSofMNYX8SoD9-o1d-pUxetlk5zUiymYBVI-WStn4IDA/exec';
 
     const convertDriveUrl = (url) => {
       if (!url) return '';
@@ -158,13 +158,15 @@
       const [newPassword, setNewPassword] = React.useState('');
       const [confirmPassword, setConfirmPassword] = React.useState('');
       
-      const [settings, setSettings] = React.useState({
+      const defaultSettings = {
         departments: ['생산팀', '품질팀', '안전팀', '관리팀'],
         categories: ['안전', '품질', '환경', '기타'],
         locations: ['생산1라인', '생산2라인', '사무실', '창고', '야외'],
         actionDepts: ['생산팀', '품질팀', '안전팀', '관리팀', '시설팀', '환경팀'],
         adminPassword: 'eaton12!@'
-      });
+      };
+      
+      const [settings, setSettings] = React.useState(defaultSettings);
 
       const [deptSettings, setDeptSettings] = React.useState([]);
 
@@ -206,7 +208,28 @@
         } catch (err) { console.error(err); }
       };
 
-      React.useEffect(() => { fetchData(); fetchDeptSettings(); }, []);
+      const fetchSettings = async () => {
+        try {
+          const response = await fetch(API_URL + '?type=settings');
+          const result = await response.json();
+          if (result.success && result.data) {
+            setSettings({ ...defaultSettings, ...result.data });
+          }
+        } catch (err) { console.error(err); }
+      };
+
+      const saveSettingsToServer = async (newSettings) => {
+        try {
+          await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'saveSettings', settings: newSettings }) });
+          setSettings(newSettings);
+          return true;
+        } catch (err) { 
+          setError('설정 저장에 실패했습니다.'); 
+          return false;
+        }
+      };
+
+      React.useEffect(() => { fetchData(); fetchDeptSettings(); fetchSettings(); }, []);
 
       const handleNewSubmission = async (data) => {
         setLoading(true);
@@ -288,7 +311,7 @@
         }
       };
 
-      const handleChangePassword = () => {
+      const handleChangePassword = async () => {
         if (newPassword !== confirmPassword) {
           alert('새 비밀번호가 일치하지 않습니다.');
           return;
@@ -297,11 +320,14 @@
           alert('비밀번호는 4자 이상이어야 합니다.');
           return;
         }
-        setSettings({ ...settings, adminPassword: newPassword });
-        setShowChangePassword(false);
-        setNewPassword('');
-        setConfirmPassword('');
-        alert('비밀번호가 변경되었습니다.');
+        const newSettings = { ...settings, adminPassword: newPassword };
+        const saved = await saveSettingsToServer(newSettings);
+        if (saved) {
+          setShowChangePassword(false);
+          setNewPassword('');
+          setConfirmPassword('');
+          alert('비밀번호가 변경되었습니다.');
+        }
       };
 
       return (
@@ -326,7 +352,7 @@
             {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'help' && <HelpTab />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
-            {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendNotifications={handleSendNotifications} submissions={submissions} />}
+            {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendNotifications={handleSendNotifications} onSaveSettings={saveSettingsToServer} submissions={submissions} />}
           </main>
 
           <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
@@ -1484,7 +1510,7 @@
       );
     }
 
-    function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendNotifications, submissions }) {
+    function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendNotifications, onSaveSettings, submissions }) {
       const [newItem, setNewItem] = React.useState({ departments: '', categories: '', locations: '', actionDepts: '' });
       const [localDeptSettings, setLocalDeptSettings] = React.useState([]);
       const [showEmailPreview, setShowEmailPreview] = React.useState(false);
@@ -1514,6 +1540,7 @@
 
       const saveSettings = async () => {
         await onSaveDeptSettings(localDeptSettings);
+        await onSaveSettings(settings);
         setAlertModal({ message: '설정이 저장되었습니다.', type: 'success' });
       };
 
