@@ -24,7 +24,7 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const API_URL = 'https://script.google.com/macros/s/AKfycbwJtHeKUbNMvXC3ZhVUszOEihuH5ypz_9TqJKmdnVkG-xyBFUXtm8Or4KZu17AgK21f_g/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbwjQuNTSY8711BlDiG2NiDXOvBSKYZtcN34ytqlch9hyeOTiPCZ-xaba_poAvbqNgxySw/exec';
 
     const convertDriveUrl = (url) => {
       if (!url) return '';
@@ -94,30 +94,19 @@
       );
     }
 
-    function PasswordModal({ department, onConfirm, onCancel }) {
+    function PasswordModal({ department, deptSettings, onConfirm, onCancel }) {
       const [password, setPassword] = React.useState('');
       const [error, setError] = React.useState(false);
-      const [checking, setChecking] = React.useState(false);
 
-      const handleSubmit = async () => {
-        setChecking(true);
-        setError(false);
-        try {
-          const response = await fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'verifyPassword', department, password })
-          });
-          const result = await response.json();
-          if (result.success && result.verified) {
-            onConfirm();
-          } else {
-            setError(true);
-            setPassword('');
-          }
-        } catch (err) {
+      const handleSubmit = () => {
+        // 로컬에서 비밀번호 확인 (서버 호출 없음)
+        const deptInfo = deptSettings.find(d => d.department === department);
+        if (deptInfo && deptInfo.password === password) {
+          onConfirm();
+        } else {
           setError(true);
+          setPassword('');
         }
-        setChecking(false);
       };
 
       const handleKeyDown = (e) => { if (e.key === 'Enter') handleSubmit(); };
@@ -136,9 +125,7 @@
             {error && <p className="text-red-500 text-sm text-center mb-3">비밀번호가 일치하지 않습니다</p>}
             <div className="flex gap-3">
               <button onClick={onCancel} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600 font-medium">취소</button>
-              <button onClick={handleSubmit} disabled={checking} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium disabled:bg-gray-400">
-                {checking ? '확인 중...' : '확인'}
-              </button>
+              <button onClick={handleSubmit} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium">확인</button>
             </div>
           </div>
         </div>
@@ -191,7 +178,9 @@
               actionContent: item['조치내용'] || item.actionContent || '',
               actionPhoto: item['조치사진URL'] || item.actionPhoto || '',
               photo: item['사진URL'] || item.photo,
-              remarks: item['비고'] || item.remarks || ''
+              remarks: item['비고'] || item.remarks || '',
+              request: item['요청사항'] || item.request || '',
+              attachment: item['첨부파일URL'] || item.attachment || ''
             }));
             setSubmissions(formattedData);
           }
@@ -1477,7 +1466,7 @@
                 })}
               </div>
             </div>
-            {passwordDept && <PasswordModal department={passwordDept} onConfirm={() => { setSelectedDept(passwordDept); setPasswordDept(null); }} onCancel={() => setPasswordDept(null)} />}
+            {passwordDept && <PasswordModal department={passwordDept} deptSettings={deptSettings} onConfirm={() => { setSelectedDept(passwordDept); setPasswordDept(null); }} onCancel={() => setPasswordDept(null)} />}
           </div>
         );
       }
@@ -1625,10 +1614,10 @@
       const [showFilter, setShowFilter] = React.useState(false);
       const [filters, setFilters] = React.useState({ department: '', category: '', location: '', status: '' });
       const [deleteTarget, setDeleteTarget] = React.useState(null);
-      
-      // 로컬 수정 상태 (조치여부, 조치부서, 비고)
-      const [localChanges, setLocalChanges] = React.useState({});
-      const [applying, setApplying] = React.useState(false);
+      const [editingItem, setEditingItem] = React.useState(null);
+      const [editForm, setEditForm] = React.useState({});
+      const [saving, setSaving] = React.useState(false);
+      const [attachmentFile, setAttachmentFile] = React.useState(null);
 
       const getStatusColor = (status) => {
         switch (status) {
@@ -1639,48 +1628,61 @@
         }
       };
 
-      // 로컬 변경사항 저장
-      const handleLocalChange = (id, field, value) => {
-        setLocalChanges(prev => ({
-          ...prev,
-          [id]: { ...prev[id], [field]: value }
-        }));
+      const handleEdit = (item) => {
+        setEditingItem(item.id);
+        setEditForm({
+          name: item.name || '',
+          department: item.department || '',
+          category: item.category || '',
+          location: item.location || '',
+          content: item.content || '',
+          status: item.status || '접수완료',
+          actionDept: item.actionDept || '',
+          actionPerson: item.actionPerson || '',
+          actionContent: item.actionContent || '',
+          remarks: item.remarks || '',
+          request: item.request || '',
+        });
+        setAttachmentFile(null);
       };
 
-      // 현재 값 가져오기 (로컬 변경이 있으면 로컬값, 없으면 원본값)
-      const getValue = (item, field) => {
-        if (localChanges[item.id] && localChanges[item.id][field] !== undefined) {
-          return localChanges[item.id][field];
-        }
-        return item[field] || '';
+      const handleCancelEdit = () => {
+        setEditingItem(null);
+        setEditForm({});
+        setAttachmentFile(null);
       };
 
-      // 변경사항 개수
-      const changesCount = Object.keys(localChanges).length;
-
-      // 일괄 적용
-      const handleApplyAll = async () => {
-        if (changesCount === 0) return;
-        
-        setApplying(true);
-        try {
-          for (const [id, changes] of Object.entries(localChanges)) {
-            await onUpdate(id, changes);
+      const handleAttachmentChange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          if (file.size > 10 * 1024 * 1024) {
+            alert('파일 크기는 10MB 이하만 가능합니다.');
+            return;
           }
-          setLocalChanges({});
-          await onRefresh(); // 데이터 새로고침
-          alert('변경사항이 저장되었습니다.');
-        } catch (err) {
-          alert('저장 중 오류가 발생했습니다.');
+          const reader = new FileReader();
+          reader.onload = () => {
+            setAttachmentFile({ name: file.name, data: reader.result });
+          };
+          reader.readAsDataURL(file);
         }
-        setApplying(false);
       };
 
-      // 변경사항 초기화
-      const handleResetChanges = () => {
-        if (changesCount > 0 && confirm('변경사항을 취소하시겠습니까?')) {
-          setLocalChanges({});
+      const handleSaveEdit = async () => {
+        setSaving(true);
+        try {
+          const updateData = { ...editForm };
+          if (attachmentFile) {
+            updateData.attachment = attachmentFile.data;
+          }
+          await onUpdate(editingItem, updateData);
+          await onRefresh();
+          setEditingItem(null);
+          setEditForm({});
+          setAttachmentFile(null);
+        } catch (err) {
+          alert('저장에 실패했습니다.');
         }
+        setSaving(false);
       };
 
       const filteredSubmissions = submissions.filter(item => {
@@ -1709,22 +1711,6 @@
             </div>
           </div>
           
-          {/* 변경사항 적용 바 */}
-          {changesCount > 0 && (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Icon name="AlertCircle" size={20} className="text-orange-500" />
-                <span className="text-orange-700 font-medium">{changesCount}건의 변경사항이 있습니다</span>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={handleResetChanges} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">취소</button>
-                <button onClick={handleApplyAll} disabled={applying} className="px-4 py-1.5 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2">
-                  {applying ? <><Icon name="Loader" size={16} className="spinner" /> 저장 중...</> : <><Icon name="Check" size={16} /> 적용</>}
-                </button>
-              </div>
-            </div>
-          )}
-          
           {showFilter && (
             <div className="bg-white rounded-xl shadow-md p-4">
               <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-700 flex items-center gap-2"><Icon name="Filter" size={18} /> 필터 설정</h3><button onClick={() => setFilters({ department: '', category: '', location: '', status: '' })} className="flex items-center gap-1 text-sm text-gray-500"><Icon name="RotateCcw" size={14} /> 초기화</button></div>
@@ -1736,52 +1722,177 @@
               </div>
             </div>
           )}
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1300px]">
-                <thead className="bg-gray-50 border-b"><tr>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">접수일자</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">이름</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">부서</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">구분</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">장소</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">내용</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">접수사진</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">조치여부</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">조치부서</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">조치담당</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">조치내용</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">조치사진</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600">비고</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600">삭제</th>
-                </tr></thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredSubmissions.length === 0 ? (<tr><td colSpan="14" className="px-3 py-8 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</td></tr>) : (
-                    filteredSubmissions.slice().reverse().map((item) => (
-                      <tr key={item.id} className={`hover:bg-gray-50 ${localChanges[item.id] ? 'bg-orange-50' : ''}`}>
-                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.date}</td>
-                        <td className="px-2 py-3 text-sm text-gray-800 font-medium whitespace-nowrap">{item.name}</td>
-                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.department}</td>
-                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.category}</td>
-                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.location}</td>
-                        <td className="px-2 py-3 text-sm text-gray-600 max-w-[120px] truncate" title={item.content}>{item.content}</td>
-                        <td className="px-2 py-3 text-center">{item.photo ? <button onClick={() => setSelectedPhoto(item.photo)} className="text-blue-500"><Icon name="Image" size={20} /></button> : <span className="text-gray-300">-</span>}</td>
-                        <td className="px-2 py-3 text-center"><select value={getValue(item, 'status')} onChange={(e) => handleLocalChange(item.id, 'status', e.target.value)} className={`px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(getValue(item, 'status'))} cursor-pointer`}><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option><option value="기각">기각</option></select></td>
-                        <td className="px-2 py-3 text-center"><select value={getValue(item, 'actionDept')} onChange={(e) => handleLocalChange(item.id, 'actionDept', e.target.value)} className="px-2 py-1 rounded-lg text-xs border border-gray-300 bg-white cursor-pointer"><option value="">선택</option>{settings.actionDepts.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
-                        <td className="px-2 py-3 text-sm text-gray-600 whitespace-nowrap">{item.actionPerson || '-'}</td>
-                        <td className="px-2 py-3 text-sm text-gray-600 max-w-[120px] truncate" title={item.actionContent}>{item.actionContent || '-'}</td>
-                        <td className="px-2 py-3 text-center">{item.actionPhoto ? <button onClick={() => setSelectedPhoto(item.actionPhoto)} className="text-green-500"><Icon name="Image" size={20} /></button> : <span className="text-gray-300">-</span>}</td>
-                        <td className="px-2 py-3"><input type="text" value={getValue(item, 'remarks')} onChange={(e) => handleLocalChange(item.id, 'remarks', e.target.value)} placeholder="비고 입력" className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg" /></td>
-                        <td className="px-2 py-3 text-center"><button onClick={() => setDeleteTarget(item.id)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={18} /></button></td>
-                      </tr>
-                    ))
+
+          {filteredSubmissions.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-md p-6 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</div>
+          ) : (
+            <div className="space-y-4">
+              {filteredSubmissions.slice().reverse().map((item) => (
+                <div key={item.id} className={`bg-white rounded-xl shadow-md overflow-hidden ${editingItem === item.id ? 'ring-2 ring-blue-500' : ''}`}>
+                  {/* 헤더 */}
+                  <div className="bg-gray-50 px-4 py-3 flex justify-between items-center border-b">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-500">{item.date}</span>
+                      <span className={`px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(item.status)}`}>{item.status}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      {editingItem === item.id ? (
+                        <>
+                          <button onClick={handleCancelEdit} className="text-gray-500 hover:text-gray-700 px-3 py-1 text-sm">취소</button>
+                          <button onClick={handleSaveEdit} disabled={saving} className="bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-medium disabled:opacity-50">
+                            {saving ? '저장 중...' : '저장'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => handleEdit(item)} className="text-blue-500 hover:text-blue-700"><Icon name="Edit" size={18} /></button>
+                          <button onClick={() => setDeleteTarget(item.id)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={18} /></button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {editingItem === item.id ? (
+                    /* 수정 모드 */
+                    <div className="p-4 space-y-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">이름</label>
+                          <input type="text" value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">부서</label>
+                          <select value={editForm.department} onChange={(e) => setEditForm({...editForm, department: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
+                            <option value="">선택</option>
+                            {settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">구분</label>
+                          <select value={editForm.category} onChange={(e) => setEditForm({...editForm, category: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
+                            <option value="">선택</option>
+                            {settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">장소</label>
+                          <select value={editForm.location} onChange={(e) => setEditForm({...editForm, location: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
+                            <option value="">선택</option>
+                            {settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">내용</label>
+                        <textarea value={editForm.content} onChange={(e) => setEditForm({...editForm, content: e.target.value})} rows={2} className="w-full p-2 border rounded-lg text-sm" />
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">조치여부</label>
+                          <select value={editForm.status} onChange={(e) => setEditForm({...editForm, status: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
+                            <option value="접수완료">접수완료</option>
+                            <option value="조치중">조치중</option>
+                            <option value="조치완료">조치완료</option>
+                            <option value="기각">기각</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">조치부서</label>
+                          <select value={editForm.actionDept} onChange={(e) => setEditForm({...editForm, actionDept: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
+                            <option value="">선택</option>
+                            {settings.actionDepts.map((d,i) => <option key={i} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">조치담당</label>
+                          <input type="text" value={editForm.actionPerson} onChange={(e) => setEditForm({...editForm, actionPerson: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">비고</label>
+                          <input type="text" value={editForm.remarks} onChange={(e) => setEditForm({...editForm, remarks: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">조치내용</label>
+                        <textarea value={editForm.actionContent} onChange={(e) => setEditForm({...editForm, actionContent: e.target.value})} rows={2} className="w-full p-2 border rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">요청사항</label>
+                        <textarea value={editForm.request} onChange={(e) => setEditForm({...editForm, request: e.target.value})} rows={3} placeholder="조치부서에 요청할 사항을 입력하세요" className="w-full p-2 border rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">첨부파일</label>
+                        <div className="flex items-center gap-3">
+                          <label className="cursor-pointer px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2">
+                            <Icon name="Paperclip" size={16} />
+                            파일 선택
+                            <input type="file" onChange={handleAttachmentChange} className="hidden" />
+                          </label>
+                          {attachmentFile && <span className="text-sm text-blue-600">{attachmentFile.name}</span>}
+                          {!attachmentFile && item.attachment && <a href={item.attachment} target="_blank" className="text-sm text-blue-600 flex items-center gap-1"><Icon name="FileText" size={14} />기존 파일 보기</a>}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* 보기 모드 */
+                    <div className="p-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 mb-3">
+                        <div><span className="text-xs text-gray-500">이름:</span> <span className="text-sm font-medium">{item.name}</span></div>
+                        <div><span className="text-xs text-gray-500">부서:</span> <span className="text-sm">{item.department}</span></div>
+                        <div><span className="text-xs text-gray-500">구분:</span> <span className="text-sm">{item.category}</span></div>
+                        <div><span className="text-xs text-gray-500">장소:</span> <span className="text-sm">{item.location}</span></div>
+                      </div>
+                      <div className="mb-3">
+                        <span className="text-xs text-gray-500">내용:</span>
+                        <p className="text-sm text-gray-700 mt-1">{item.content}</p>
+                      </div>
+                      {item.photo && (
+                        <div className="mb-3">
+                          <span className="text-xs text-gray-500">접수사진:</span>
+                          <button onClick={() => setSelectedPhoto(item.photo)} className="ml-2 text-blue-500"><Icon name="Image" size={18} /></button>
+                        </div>
+                      )}
+                      {(item.actionDept || item.actionPerson || item.actionContent || item.actionPhoto) && (
+                        <div className="bg-green-50 rounded-lg p-3 mt-3">
+                          <div className="text-xs font-medium text-green-700 mb-2">조치 정보</div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-sm">
+                            {item.actionDept && <div><span className="text-xs text-gray-500">조치부서:</span> {item.actionDept}</div>}
+                            {item.actionPerson && <div><span className="text-xs text-gray-500">조치담당:</span> {item.actionPerson}</div>}
+                          </div>
+                          {item.actionContent && <div className="mt-2"><span className="text-xs text-gray-500">조치내용:</span><p className="text-sm mt-1">{item.actionContent}</p></div>}
+                          {item.actionPhoto && <div className="mt-2"><span className="text-xs text-gray-500">조치사진:</span><button onClick={() => setSelectedPhoto(item.actionPhoto)} className="ml-2 text-green-500"><Icon name="Image" size={18} /></button></div>}
+                        </div>
+                      )}
+                      {item.request && (
+                        <div className="bg-yellow-50 rounded-lg p-3 mt-3">
+                          <div className="text-xs font-medium text-yellow-700 mb-1">요청사항</div>
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.request}</p>
+                        </div>
+                      )}
+                      {item.attachment && (
+                        <div className="mt-3">
+                          <a href={item.attachment} target="_blank" className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                            <Icon name="FileText" size={16} />첨부파일 보기
+                          </a>
+                        </div>
+                      )}
+                      {item.remarks && (
+                        <div className="bg-gray-50 rounded-lg p-3 mt-3">
+                          <div className="text-xs font-medium text-gray-600 mb-1">비고</div>
+                          <p className="text-sm text-gray-700">{item.remarks}</p>
+                        </div>
+                      )}
+                    </div>
                   )}
-                </tbody>
-              </table>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
+
           {selectedPhoto && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPhoto(null)}><div className="relative max-w-3xl max-h-full"><img src={convertDriveUrl(selectedPhoto)} alt="사진" className="max-w-full max-h-[80vh] object-contain rounded-lg bg-white" /><button onClick={() => setSelectedPhoto(null)} className="absolute top-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg"><Icon name="X" size={24} /></button></div></div>)}
           {deleteTarget && <ConfirmModal message="정말 삭제하시겠습니까?" onConfirm={() => { onDelete(deleteTarget); setDeleteTarget(null); }} onCancel={() => setDeleteTarget(null)} />}
+        </div>
+      );
         </div>
       );
     }
