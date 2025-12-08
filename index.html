@@ -2029,7 +2029,7 @@
                           <td className="px-2 py-2"><select value={getValue(item.id, 'department', item.department)} onChange={(e) => handleFieldChange(item.id, 'department', e.target.value)} className="w-20 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
                           <td className="px-2 py-2"><select value={getValue(item.id, 'category', item.category)} onChange={(e) => handleFieldChange(item.id, 'category', e.target.value)} className="w-20 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}</select></td>
                           <td className="px-2 py-2"><select value={getValue(item.id, 'location', item.location)} onChange={(e) => handleFieldChange(item.id, 'location', e.target.value)} className="w-24 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}</select></td>
-                          <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'content', item.content)} onChange={(e) => handleFieldChange(item.id, 'content', e.target.value)} className="w-full p-1 border rounded text-xs" title={item.content} /></td>
+                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'content', item.content)} onChange={(e) => handleFieldChange(item.id, 'content', e.target.value)} className="w-48 min-w-48 p-1 border rounded text-xs h-16 resize-y" /></td>
                           <td className="px-2 py-2">
                             <div className="flex flex-col gap-1">
                               {/* 원거리 사진 */}
@@ -2061,7 +2061,7 @@
                           <td className="px-2 py-2"><select value={getValue(item.id, 'status', item.status)} onChange={(e) => handleFieldChange(item.id, 'status', e.target.value)} className={`w-20 p-1 border rounded text-xs font-medium ${getStatusColor(getValue(item.id, 'status', item.status))}`}><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option><option value="기각">기각</option></select></td>
                           <td className="px-2 py-2"><select value={getValue(item.id, 'actionDept', item.actionDept)} onChange={(e) => handleFieldChange(item.id, 'actionDept', e.target.value)} className="w-24 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
                           <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'actionPerson', item.actionPerson)} onChange={(e) => handleFieldChange(item.id, 'actionPerson', e.target.value)} className="w-16 p-1 border rounded text-xs" /></td>
-                          <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'actionContent', item.actionContent)} onChange={(e) => handleFieldChange(item.id, 'actionContent', e.target.value)} className="w-full p-1 border rounded text-xs" /></td>
+                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'actionContent', item.actionContent)} onChange={(e) => handleFieldChange(item.id, 'actionContent', e.target.value)} className="w-48 min-w-48 p-1 border rounded text-xs h-16 resize-y" /></td>
                           <td className="px-2 py-2 text-center">
                             {(editedData[item.id]?.actionPhoto !== undefined ? editedData[item.id].actionPhoto : item.actionPhoto) ? (
                               <div className="flex items-center justify-center gap-1">
@@ -2072,7 +2072,7 @@
                               <label className="cursor-pointer text-gray-400 hover:text-green-600"><Icon name="Upload" size={14} /><input type="file" accept="image/*" onChange={(e) => handlePhotoReplace(item.id, 'actionPhoto', e)} className="hidden" /></label>
                             )}
                           </td>
-                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'request', item.request)} onChange={(e) => handleFieldChange(item.id, 'request', e.target.value)} className="w-full p-1 border rounded text-xs h-12 resize-none" /></td>
+                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'request', item.request)} onChange={(e) => handleFieldChange(item.id, 'request', e.target.value)} className="w-40 min-w-40 p-1 border rounded text-xs h-16 resize-y" /></td>
                           <td className="px-2 py-2 text-center">
                             {attachmentFiles[item.id] ? (
                               <span className="text-xs text-blue-600">{attachmentFiles[item.id].name.substring(0,8)}...</span>
@@ -2081,7 +2081,7 @@
                             ) : null}
                             <label className="cursor-pointer text-gray-400 hover:text-gray-600 ml-1"><Icon name="Paperclip" size={14} /><input type="file" onChange={(e) => handleAttachmentChange(item.id, e)} className="hidden" /></label>
                           </td>
-                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'remarks', item.remarks)} onChange={(e) => handleFieldChange(item.id, 'remarks', e.target.value)} className="w-full p-1 border rounded text-xs h-12 resize-none" /></td>
+                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'remarks', item.remarks)} onChange={(e) => handleFieldChange(item.id, 'remarks', e.target.value)} className="w-40 min-w-40 p-1 border rounded text-xs h-16 resize-y" /></td>
                           <td className="px-2 py-2 text-center">
                             <input type="checkbox" checked={getValue(item.id, 'emailSent', item.emailSent)} onChange={(e) => handleFieldChange(item.id, 'emailSent', e.target.checked)} className="w-4 h-4 rounded" />
                           </td>
