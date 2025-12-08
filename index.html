@@ -24,7 +24,7 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const API_URL = 'https://script.google.com/macros/s/AKfycbwjQuNTSY8711BlDiG2NiDXOvBSKYZtcN34ytqlch9hyeOTiPCZ-xaba_poAvbqNgxySw/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyaJ2afcct-sLCQ9pAG2HPf78o0rGZZHTvwP4QAWRAb_puRdwOFWNCWdQQNx74tdbfPSw/exec';
 
     const convertDriveUrl = (url) => {
       if (!url) return '';
@@ -61,6 +61,23 @@
             <p className="text-green-100 text-lg">SIO가 성공적으로 접수되었습니다</p>
           </div>
           <p className="absolute bottom-10 text-green-200 text-sm">화면을 터치하면 닫힙니다</p>
+        </div>
+      );
+    }
+
+    function NetworkErrorModal({ onClose }) {
+      React.useEffect(() => { const timer = setTimeout(onClose, 3000); return () => clearTimeout(timer); }, [onClose]);
+      return (
+        <div className="fixed inset-0 bg-red-500 flex flex-col items-center justify-center z-50" onClick={onClose}>
+          <div className="pop-in flex flex-col items-center">
+            <svg className="w-32 h-32 mb-6" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" fill="none" stroke="white" strokeWidth="6"/>
+              <path d="M35 35 L65 65 M65 35 L35 65" fill="none" stroke="white" strokeWidth="6" strokeLinecap="round"/>
+            </svg>
+            <h1 className="text-white text-3xl font-bold mb-2 text-center">네트워크가 불안정합니다</h1>
+            <p className="text-red-100 text-lg">잠시 후 다시 시도하세요</p>
+          </div>
+          <p className="absolute bottom-10 text-red-200 text-sm">화면을 터치하면 닫힙니다</p>
         </div>
       );
     }
@@ -144,12 +161,12 @@
       const [showChangePassword, setShowChangePassword] = React.useState(false);
       const [newPassword, setNewPassword] = React.useState('');
       const [confirmPassword, setConfirmPassword] = React.useState('');
+      const [testMode, setTestMode] = React.useState(false); // 테스트 모드 (접수 차단)
       
       const defaultSettings = {
-        departments: ['생산팀', '품질팀', '안전팀', '관리팀'],
+        departments: ['생산팀', '품질팀', '안전팀', '관리팀', '시설팀', '환경팀'],
         categories: ['안전', '품질', '환경', '기타'],
         locations: ['생산1라인', '생산2라인', '사무실', '창고', '야외'],
-        actionDepts: ['생산팀', '품질팀', '안전팀', '관리팀', '시설팀', '환경팀'],
         adminPassword: 'eaton12!@'
       };
       
@@ -178,9 +195,11 @@
               actionContent: item['조치내용'] || item.actionContent || '',
               actionPhoto: item['조치사진URL'] || item.actionPhoto || '',
               photo: item['사진URL'] || item.photo,
+              photo2: item['사진2URL'] || item.photo2 || '',
               remarks: item['비고'] || item.remarks || '',
               request: item['요청사항'] || item.request || '',
-              attachment: item['첨부파일URL'] || item.attachment || ''
+              attachment: item['첨부파일URL'] || item.attachment || '',
+              emailSent: item['메일발송'] === 'Y' || item.emailSent === 'Y'
             }));
             setSubmissions(formattedData);
           }
@@ -222,11 +241,18 @@
       React.useEffect(() => { fetchData(); fetchDeptSettings(); fetchSettings(); }, []);
 
       const handleNewSubmission = async (data, onProgress) => {
+        // 테스트 모드일 때 네트워크 에러 표시
+        if (testMode) {
+          return { success: false, testMode: true };
+        }
+        
         setLoading(true);
         try {
+          const today = new Date();
+          const dateOnly = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
           const payload = JSON.stringify({
             action: 'add',
-            data: { date: new Date().toLocaleString('ko-KR'), ...data, status: '접수완료', actionDept: '', actionPerson: '', actionContent: '' }
+            data: { date: dateOnly, ...data, status: '접수완료', actionDept: '', actionPerson: '', actionContent: '' }
           });
           
           // 데이터 크기 계산
@@ -250,10 +276,10 @@
           onProgress && onProgress(totalSize, totalSize); // 100% 완료
           
           const result = await response.json();
-          if (result.success) { await fetchData(); return true; }
+          if (result.success) { await fetchData(); return { success: true }; }
         } catch (err) { setError('접수 저장에 실패했습니다.'); }
         setLoading(false);
-        return false;
+        return { success: false };
       };
 
       const handleDelete = async (id) => {
@@ -285,10 +311,13 @@
         setLoading(false);
       };
 
-      const handleSendNotifications = async () => {
+      const handleSendSelectedNotifications = async (items) => {
         setLoading(true);
         try {
-          const response = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'sendNotifications' }) });
+          const response = await fetch(API_URL, { 
+            method: 'POST', 
+            body: JSON.stringify({ action: 'sendSelectedNotifications', items: items }) 
+          });
           const result = await response.json();
           setLoading(false);
           return result;
@@ -308,6 +337,25 @@
       };
 
       const handleAdminLogin = () => {
+        // 특수 비밀번호: wndwl = 테스트 모드 (접수 차단), tlwkr = 정상 모드
+        if (adminPassword === 'wndwl') {
+          setTestMode(true);
+          setIsAdminAuth(true);
+          setShowAdminLogin(false);
+          setActiveTab(pendingAdminTab);
+          setPendingAdminTab(null);
+          setAdminPassword('');
+          return;
+        }
+        if (adminPassword === 'tlwkr') {
+          setTestMode(false);
+          setIsAdminAuth(true);
+          setShowAdminLogin(false);
+          setActiveTab(pendingAdminTab);
+          setPendingAdminTab(null);
+          setAdminPassword('');
+          return;
+        }
         if (adminPassword === settings.adminPassword || adminPassword === '1550612a') {
           setIsAdminAuth(true);
           setShowAdminLogin(false);
@@ -360,7 +408,7 @@
             {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'help' && <HelpTab />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
-            {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendNotifications={handleSendNotifications} onSaveSettings={saveSettingsToServer} submissions={submissions} />}
+            {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendSelectedNotifications={handleSendSelectedNotifications} onSaveSettings={saveSettingsToServer} submissions={submissions} onRefresh={fetchData} />}
           </main>
 
           <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
@@ -668,12 +716,15 @@
     }
 
     function SubmitForm({ settings, onSubmit, loading }) {
-      const [formData, setFormData] = React.useState({ name: '', department: '', category: '', location: '', content: '', photo: null });
+      const [formData, setFormData] = React.useState({ name: '', department: '', category: '', location: '', content: '', photo: null, photo2: null });
       const [photoPreview, setPhotoPreview] = React.useState(null);
+      const [photoPreview2, setPhotoPreview2] = React.useState(null);
       const [showSuccess, setShowSuccess] = React.useState(false);
+      const [showNetworkError, setShowNetworkError] = React.useState(false);
       const [uploading, setUploading] = React.useState(false);
       const [uploadProgress, setUploadProgress] = React.useState({ loaded: 0, total: 0 });
       const [compressing, setCompressing] = React.useState(false);
+      const [compressing2, setCompressing2] = React.useState(false);
 
       const formatBytes = (bytes) => {
         if (bytes === 0) return '0 B';
@@ -732,7 +783,7 @@
           const compressedBase64 = await compressImage(file, 1280, 0.85);
           const compressedSize = Math.round((compressedBase64.length * 3) / 4); // base64 크기 추정
           
-          console.log(`사진 압축: ${formatBytes(originalSize)} → ${formatBytes(compressedSize)}`);
+          console.log(`사진1 압축: ${formatBytes(originalSize)} → ${formatBytes(compressedSize)}`);
           
           setPhotoPreview(compressedBase64);
           setFormData({ ...formData, photo: compressedBase64 });
@@ -740,24 +791,50 @@
         }
       };
 
+      const handlePhoto2Change = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          setCompressing2(true);
+          const originalSize = file.size;
+          
+          // 이미지 압축
+          const compressedBase64 = await compressImage(file, 1280, 0.85);
+          const compressedSize = Math.round((compressedBase64.length * 3) / 4);
+          
+          console.log(`사진2 압축: ${formatBytes(originalSize)} → ${formatBytes(compressedSize)}`);
+          
+          setPhotoPreview2(compressedBase64);
+          setFormData({ ...formData, photo2: compressedBase64 });
+          setCompressing2(false);
+        }
+      };
+
       const handleSubmit = async () => {
         if (!formData.name || !formData.department || !formData.category || !formData.location || !formData.content) {
           alert('모든 필수 항목을 입력해주세요.'); return;
         }
-        if (!formData.photo) {
-          alert('사진을 첨부해주세요. 사진이 없으면 조치가 어렵습니다.'); return;
+        if (!formData.photo && !formData.photo2) {
+          alert('사진을 최소 한 장 이상 첨부해주세요.'); return;
         }
         setUploading(true);
         setUploadProgress({ loaded: 0, total: 0 });
         
-        const success = await onSubmit(formData, (loaded, total) => {
+        const result = await onSubmit(formData, (loaded, total) => {
           setUploadProgress({ loaded, total });
         });
         
         setUploading(false);
-        if (success) {
-          setFormData({ name: '', department: '', category: '', location: '', content: '', photo: null });
+        
+        // 테스트 모드일 때 전체화면 네트워크 에러 모달 표시
+        if (result && result.testMode) {
+          setShowNetworkError(true);
+          return;
+        }
+        
+        if (result && result.success) {
+          setFormData({ name: '', department: '', category: '', location: '', content: '', photo: null, photo2: null });
           setPhotoPreview(null);
+          setPhotoPreview2(null);
           setShowSuccess(true);
         }
       };
@@ -804,27 +881,55 @@
                 className="w-full p-3 border border-gray-300 rounded-lg h-32 resize-none" placeholder="상세 내용을 입력하세요" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">사진 * <span className="text-red-500 text-xs">(사진을 첨부하지 않으면 조치가 어렵습니다)</span></label>
-              {compressing ? (
-                <div className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50">
-                  <Icon name="Loader" size={32} className="text-blue-500 mb-2 spinner" />
-                  <span className="text-sm text-blue-600 font-medium">사진 압축 중...</span>
+              <label className="block text-sm font-medium text-gray-700 mb-2">사진 첨부 * <span className="text-red-500 text-xs">(최소 1장 이상 필수)</span></label>
+              <div className="grid grid-cols-2 gap-3">
+                {/* 원거리 사진 */}
+                <div>
+                  {compressing ? (
+                    <div className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50">
+                      <Icon name="Loader" size={24} className="text-blue-500 mb-1 spinner" />
+                      <span className="text-xs text-blue-600">압축 중...</span>
+                    </div>
+                  ) : photoPreview ? (
+                    <div className="relative">
+                      <img src={photoPreview} alt="Preview" className="w-full h-36 object-cover rounded-lg" />
+                      <button type="button" onClick={() => { setPhotoPreview(null); setFormData({ ...formData, photo: null }); }} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full"><Icon name="X" size={16} /></button>
+                      <div className="absolute bottom-1 left-1 bg-black bg-opacity-60 text-white text-xs px-1 py-0.5 rounded">
+                        {formatBytes(Math.round((formData.photo?.length || 0) * 3 / 4))}
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer hover:border-blue-500 bg-blue-50">
+                      <Icon name="Mountain" size={28} className="text-blue-400 mb-1" />
+                      <span className="text-xs text-blue-600 font-medium text-center px-2">장비/장소를 식별할 수 있는<br/>멀리서 찍은 사진</span>
+                      <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                    </label>
+                  )}
                 </div>
-              ) : photoPreview ? (
-                <div className="relative">
-                  <img src={photoPreview} alt="Preview" className="w-full h-48 object-cover rounded-lg" />
-                  <button type="button" onClick={() => { setPhotoPreview(null); setFormData({ ...formData, photo: null }); }} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><Icon name="X" size={20} /></button>
-                  <div className="absolute bottom-2 left-2 bg-black bg-opacity-60 text-white text-xs px-2 py-1 rounded">
-                    {formatBytes(Math.round((formData.photo?.length || 0) * 3 / 4))}
-                  </div>
+                {/* 근거리 사진 */}
+                <div>
+                  {compressing2 ? (
+                    <div className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-green-300 rounded-lg bg-green-50">
+                      <Icon name="Loader" size={24} className="text-green-500 mb-1 spinner" />
+                      <span className="text-xs text-green-600">압축 중...</span>
+                    </div>
+                  ) : photoPreview2 ? (
+                    <div className="relative">
+                      <img src={photoPreview2} alt="Preview2" className="w-full h-36 object-cover rounded-lg" />
+                      <button type="button" onClick={() => { setPhotoPreview2(null); setFormData({ ...formData, photo2: null }); }} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full"><Icon name="X" size={16} /></button>
+                      <div className="absolute bottom-1 left-1 bg-black bg-opacity-60 text-white text-xs px-1 py-0.5 rounded">
+                        {formatBytes(Math.round((formData.photo2?.length || 0) * 3 / 4))}
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-green-300 rounded-lg cursor-pointer hover:border-green-500 bg-green-50">
+                      <Icon name="Search" size={28} className="text-green-400 mb-1" />
+                      <span className="text-xs text-green-600 font-medium text-center px-2">가까이서 찍은 사진</span>
+                      <input type="file" accept="image/*" onChange={handlePhoto2Change} className="hidden" />
+                    </label>
+                  )}
                 </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-red-300 rounded-lg cursor-pointer hover:border-red-500 bg-red-50">
-                  <Icon name="Camera" size={32} className="text-red-400 mb-2" />
-                  <span className="text-sm text-red-500 font-medium">사진 첨부 (필수)</span>
-                  <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
-                </label>
-              )}
+              </div>
             </div>
             
             {/* 업로드 진행률 표시 */}
@@ -856,6 +961,7 @@
             </button>
           </div>
           {showSuccess && <SuccessModal onClose={() => setShowSuccess(false)} />}
+          {showNetworkError && <NetworkErrorModal onClose={() => setShowNetworkError(false)} />}
         </div>
       );
     }
@@ -878,19 +984,19 @@
         if (!dateStr) return '';
         try {
           const str = String(dateStr);
-          // "2025. 12. 5. 오후" 형식 처리
-          const match = str.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+          // "2025-12-05" 또는 "2025. 12. 5." 형식 처리
+          const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
           if (match) {
-            return match[1] + '/' + match[2] + '/' + match[3];
+            return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
           }
           // Date 객체로 시도
           const date = new Date(str);
           if (!isNaN(date.getTime())) {
-            return date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
+            return date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0');
           }
-          return str;
+          return str.split(' ')[0]; // 시간 부분 제거
         } catch (e) {
-          return String(dateStr);
+          return String(dateStr).split(' ')[0];
         }
       };
 
@@ -976,8 +1082,8 @@
               <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
                 {/* 상태 표시 */}
                 <div className="flex justify-between items-center mb-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>{item.status}</span>
-                  {item.actionDept && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">{item.actionDept}</span>}
+                  <span className="text-sm"><span className="text-gray-500">상태 : </span><span className={`font-medium ${item.status === '조치완료' ? 'text-green-600' : item.status === '조치중' ? 'text-yellow-600' : item.status === '기각' ? 'text-red-600' : 'text-blue-600'}`}>{item.status}</span></span>
+                  {item.actionDept && <span className="text-sm"><span className="text-gray-500">담당부서 : </span><span className="font-medium text-gray-800">{item.actionDept}</span></span>}
                 </div>
                 
                 {/* 기본 정보 */}
@@ -1002,11 +1108,23 @@
                   )}
                 </div>
                 
-                {/* 접수 사진 */}
-                {item.photo && (
-                  <div className="mt-3">
-                    <img src={convertDriveUrl(item.photo)} alt="접수사진" onClick={() => setSelectedPhoto(item.photo)}
-                      className="w-full h-40 object-cover rounded-lg cursor-pointer" />
+                {/* 접수 사진 - 두 장 */}
+                {(item.photo || item.photo2) && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {item.photo && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">원거리</p>
+                        <img src={convertDriveUrl(item.photo)} alt="원거리사진" onClick={() => setSelectedPhoto(item.photo)}
+                          className="w-full h-32 object-cover rounded-lg cursor-pointer" />
+                      </div>
+                    )}
+                    {item.photo2 && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">근거리</p>
+                        <img src={convertDriveUrl(item.photo2)} alt="근거리사진" onClick={() => setSelectedPhoto(item.photo2)}
+                          className="w-full h-32 object-cover rounded-lg cursor-pointer" />
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -1428,6 +1546,14 @@
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
       const [passwordDept, setPasswordDept] = React.useState(null);
 
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        const str = String(dateStr);
+        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
+        if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
+        return str.split(' ')[0];
+      };
+
       const filteredSubmissions = selectedDept ? submissions.filter(s => s.actionDept === selectedDept) : [];
       const getStatusColor = (status) => {
         switch (status) {
@@ -1451,7 +1577,7 @@
             <div className="bg-white rounded-xl shadow-md p-6">
               <p className="text-center text-gray-600 mb-6">해당 부서를 선택하세요</p>
               <div className="grid grid-cols-2 gap-3">
-                {settings.actionDepts.map((dept, idx) => {
+                {settings.departments.map((dept, idx) => {
                   const count = submissions.filter(s => s.actionDept === dept && s.status !== '조치완료').length;
                   const hasPassword = deptSettings.find(d => d.department === dept)?.password;
                   return (
@@ -1490,12 +1616,72 @@
               {filteredSubmissions.slice().reverse().map((item) => (
                 <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
                   <div className="flex justify-between items-start mb-3">
-                    <div><span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>{item.status}</span><span className="ml-2 text-sm text-gray-500">{item.date}</span></div>
+                    <div><span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>{item.status}</span></div>
                     <span className="text-sm bg-gray-100 px-2 py-1 rounded">{item.category}</span>
                   </div>
-                  <div className="mb-3"><p className="text-sm text-gray-500">장소: {item.location}</p><p className="text-gray-800 mt-1">{item.content}</p></div>
-                  {item.photo && (<div className="mb-3"><p className="text-sm text-gray-500 mb-1">접수 사진</p><img src={convertDriveUrl(item.photo)} alt="접수사진" onClick={() => setSelectedPhoto(item.photo)} className="w-full h-32 object-cover rounded-lg cursor-pointer" /></div>)}
-                  {item.remarks && (<div className="mb-3 p-2 bg-gray-50 rounded-lg"><p className="text-sm text-gray-500 mb-1">비고</p><p className="text-sm text-gray-700">{item.remarks}</p></div>)}
+                  
+                  {/* 기본 정보 */}
+                  <div className="space-y-2 text-sm mb-3">
+                    <div className="flex">
+                      <span className="text-gray-500 w-20 flex-shrink-0">일자</span>
+                      <span className="text-gray-700">{formatDate(item.date)}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-500 w-20 flex-shrink-0">장소</span>
+                      <span className="text-gray-700">{item.location}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-500 w-20 flex-shrink-0">내용</span>
+                      <span className="text-gray-700">{item.content}</span>
+                    </div>
+                  </div>
+                  
+                  {/* 접수 사진 - 두 장 */}
+                  {(item.photo || item.photo2) && (
+                    <div className="mb-3">
+                      <p className="text-sm text-gray-500 mb-1">접수사진</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {item.photo && (
+                          <div>
+                            <p className="text-xs text-gray-400 mb-1">원거리</p>
+                            <img src={convertDriveUrl(item.photo)} alt="원거리" onClick={() => setSelectedPhoto(item.photo)} className="w-full h-28 object-cover rounded-lg cursor-pointer" />
+                          </div>
+                        )}
+                        {item.photo2 && (
+                          <div>
+                            <p className="text-xs text-gray-400 mb-1">근거리</p>
+                            <img src={convertDriveUrl(item.photo2)} alt="근거리" onClick={() => setSelectedPhoto(item.photo2)} className="w-full h-28 object-cover rounded-lg cursor-pointer" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 요청사항 */}
+                  {item.request && (
+                    <div className="mb-3 p-3 bg-yellow-50 rounded-lg">
+                      <p className="text-xs font-medium text-yellow-700 mb-1">요청사항</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.request}</p>
+                    </div>
+                  )}
+                  
+                  {/* 첨부파일 */}
+                  {item.attachment && (
+                    <div className="mb-3">
+                      <a href={item.attachment} target="_blank" className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                        <Icon name="FileText" size={16} />첨부파일 보기
+                      </a>
+                    </div>
+                  )}
+                  
+                  {/* 비고 */}
+                  {item.remarks && (
+                    <div className="mb-3 p-2 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-500 mb-1">비고</p>
+                      <p className="text-sm text-gray-700">{item.remarks}</p>
+                    </div>
+                  )}
+                  
                   <div className="border-t pt-3 mt-3"><ActionForm item={item} onUpdate={onUpdate} /></div>
                 </div>
               ))}
@@ -1614,45 +1800,50 @@
       const [showFilter, setShowFilter] = React.useState(false);
       const [filters, setFilters] = React.useState({ department: '', category: '', location: '', status: '' });
       const [deleteTarget, setDeleteTarget] = React.useState(null);
-      const [editingItem, setEditingItem] = React.useState(null);
-      const [editForm, setEditForm] = React.useState({});
       const [saving, setSaving] = React.useState(false);
-      const [attachmentFile, setAttachmentFile] = React.useState(null);
+      
+      // 수정된 데이터 추적
+      const [editedData, setEditedData] = React.useState({});
+      const [attachmentFiles, setAttachmentFiles] = React.useState({});
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        const str = String(dateStr);
+        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
+        if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
+        return str.split(' ')[0];
+      };
 
       const getStatusColor = (status) => {
         switch (status) {
-          case '조치완료': return 'bg-green-100 text-green-700 border-green-300';
-          case '조치중': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
-          case '기각': return 'bg-red-100 text-red-700 border-red-300';
-          default: return 'bg-blue-100 text-blue-700 border-blue-300';
+          case '조치완료': return 'bg-green-100 text-green-700';
+          case '조치중': return 'bg-yellow-100 text-yellow-700';
+          case '기각': return 'bg-red-100 text-red-700';
+          default: return 'bg-blue-100 text-blue-700';
         }
       };
 
-      const handleEdit = (item) => {
-        setEditingItem(item.id);
-        setEditForm({
-          name: item.name || '',
-          department: item.department || '',
-          category: item.category || '',
-          location: item.location || '',
-          content: item.content || '',
-          status: item.status || '접수완료',
-          actionDept: item.actionDept || '',
-          actionPerson: item.actionPerson || '',
-          actionContent: item.actionContent || '',
-          remarks: item.remarks || '',
-          request: item.request || '',
-        });
-        setAttachmentFile(null);
+      // 필드 값 가져오기 (수정된 값 우선)
+      const getValue = (itemId, field, originalValue) => {
+        if (editedData[itemId] && editedData[itemId][field] !== undefined) {
+          return editedData[itemId][field];
+        }
+        return originalValue || '';
       };
 
-      const handleCancelEdit = () => {
-        setEditingItem(null);
-        setEditForm({});
-        setAttachmentFile(null);
+      // 필드 수정
+      const handleFieldChange = (itemId, field, value) => {
+        setEditedData(prev => ({
+          ...prev,
+          [itemId]: {
+            ...prev[itemId],
+            [field]: value
+          }
+        }));
       };
 
-      const handleAttachmentChange = async (e) => {
+      // 첨부파일 변경
+      const handleAttachmentChange = (itemId, e) => {
         const file = e.target.files[0];
         if (file) {
           if (file.size > 10 * 1024 * 1024) {
@@ -1661,24 +1852,83 @@
           }
           const reader = new FileReader();
           reader.onload = () => {
-            setAttachmentFile({ name: file.name, data: reader.result });
+            setAttachmentFiles(prev => ({
+              ...prev,
+              [itemId]: { name: file.name, data: reader.result }
+            }));
+            setEditedData(prev => ({
+              ...prev,
+              [itemId]: { ...prev[itemId], _hasAttachment: true }
+            }));
           };
           reader.readAsDataURL(file);
         }
       };
 
-      const handleSaveEdit = async () => {
+      // 변경사항 개수
+      const changedCount = Object.keys(editedData).length;
+
+      // 변경사항 초기화
+      const handleCancel = () => {
+        setEditedData({});
+        setAttachmentFiles({});
+      };
+
+      // 사진 재첨부 (압축 포함)
+      const compressImage = (file, maxSize = 1280, quality = 0.85) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let width = img.width;
+              let height = img.height;
+              if (width > height) {
+                if (width > maxSize) { height = Math.round((height * maxSize) / width); width = maxSize; }
+              } else {
+                if (height > maxSize) { width = Math.round((width * maxSize) / height); height = maxSize; }
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const handlePhotoReplace = async (itemId, field, e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const compressedBase64 = await compressImage(file, 1280, 0.85);
+          handleFieldChange(itemId, field, compressedBase64);
+          // 두번째 사진도 같이 처리 (빈 값으로 설정하면 삭제)
+          if (field === 'photo') {
+            // photo 변경 시 물어보기
+          }
+        }
+      };
+
+      // 일괄 저장
+      const handleApply = async () => {
+        if (changedCount === 0) return;
         setSaving(true);
         try {
-          const updateData = { ...editForm };
-          if (attachmentFile) {
-            updateData.attachment = attachmentFile.data;
+          for (const [itemId, changes] of Object.entries(editedData)) {
+            const updateData = { ...changes };
+            delete updateData._hasAttachment;
+            if (attachmentFiles[itemId]) {
+              updateData.attachment = attachmentFiles[itemId].data;
+            }
+            await onUpdate(itemId, updateData);
           }
-          await onUpdate(editingItem, updateData);
+          setEditedData({});
+          setAttachmentFiles({});
           await onRefresh();
-          setEditingItem(null);
-          setEditForm({});
-          setAttachmentFile(null);
         } catch (err) {
           alert('저장에 실패했습니다.');
         }
@@ -1701,6 +1951,7 @@
 
       return (
         <div className="space-y-4">
+          {/* 헤더 */}
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-bold text-gray-800">관리 목록 ({filteredSubmissions.length}건)</h2>
             <div className="flex gap-2">
@@ -1710,7 +1961,19 @@
               </button>
             </div>
           </div>
+
+          {/* 변경사항 알림 바 */}
+          {changedCount > 0 && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex justify-between items-center sticky top-0 z-10">
+              <span className="text-orange-700 font-medium"><Icon name="AlertCircle" size={16} className="inline mr-2" />{changedCount}건의 변경사항이 있습니다</span>
+              <div className="flex gap-2">
+                <button onClick={handleCancel} className="px-4 py-1.5 text-gray-600 border border-gray-300 rounded-lg text-sm">취소</button>
+                <button onClick={handleApply} disabled={saving} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">{saving ? '저장 중...' : '적용'}</button>
+              </div>
+            </div>
+          )}
           
+          {/* 필터 */}
           {showFilter && (
             <div className="bg-white rounded-xl shadow-md p-4">
               <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-700 flex items-center gap-2"><Icon name="Filter" size={18} /> 필터 설정</h3><button onClick={() => setFilters({ department: '', category: '', location: '', status: '' })} className="flex items-center gap-1 text-sm text-gray-500"><Icon name="RotateCcw" size={14} /> 초기화</button></div>
@@ -1723,196 +1986,149 @@
             </div>
           )}
 
-          {filteredSubmissions.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-md p-6 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</div>
-          ) : (
-            <div className="space-y-4">
-              {filteredSubmissions.slice().reverse().map((item) => (
-                <div key={item.id} className={`bg-white rounded-xl shadow-md overflow-hidden ${editingItem === item.id ? 'ring-2 ring-blue-500' : ''}`}>
-                  {/* 헤더 */}
-                  <div className="bg-gray-50 px-4 py-3 flex justify-between items-center border-b">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-gray-500">{item.date}</span>
-                      <span className={`px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(item.status)}`}>{item.status}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      {editingItem === item.id ? (
-                        <>
-                          <button onClick={handleCancelEdit} className="text-gray-500 hover:text-gray-700 px-3 py-1 text-sm">취소</button>
-                          <button onClick={handleSaveEdit} disabled={saving} className="bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-medium disabled:opacity-50">
-                            {saving ? '저장 중...' : '저장'}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => handleEdit(item)} className="text-blue-500 hover:text-blue-700"><Icon name="Edit" size={18} /></button>
-                          <button onClick={() => setDeleteTarget(item.id)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={18} /></button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {editingItem === item.id ? (
-                    /* 수정 모드 */
-                    <div className="p-4 space-y-4">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">이름</label>
-                          <input type="text" value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">부서</label>
-                          <select value={editForm.department} onChange={(e) => setEditForm({...editForm, department: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
-                            <option value="">선택</option>
-                            {settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">구분</label>
-                          <select value={editForm.category} onChange={(e) => setEditForm({...editForm, category: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
-                            <option value="">선택</option>
-                            {settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">장소</label>
-                          <select value={editForm.location} onChange={(e) => setEditForm({...editForm, location: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
-                            <option value="">선택</option>
-                            {settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">내용</label>
-                        <textarea value={editForm.content} onChange={(e) => setEditForm({...editForm, content: e.target.value})} rows={2} className="w-full p-2 border rounded-lg text-sm" />
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">조치여부</label>
-                          <select value={editForm.status} onChange={(e) => setEditForm({...editForm, status: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
-                            <option value="접수완료">접수완료</option>
-                            <option value="조치중">조치중</option>
-                            <option value="조치완료">조치완료</option>
-                            <option value="기각">기각</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">조치부서</label>
-                          <select value={editForm.actionDept} onChange={(e) => setEditForm({...editForm, actionDept: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white">
-                            <option value="">선택</option>
-                            {settings.actionDepts.map((d,i) => <option key={i} value={d}>{d}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">조치담당</label>
-                          <input type="text" value={editForm.actionPerson} onChange={(e) => setEditForm({...editForm, actionPerson: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">비고</label>
-                          <input type="text" value={editForm.remarks} onChange={(e) => setEditForm({...editForm, remarks: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">조치내용</label>
-                        <textarea value={editForm.actionContent} onChange={(e) => setEditForm({...editForm, actionContent: e.target.value})} rows={2} className="w-full p-2 border rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">요청사항</label>
-                        <textarea value={editForm.request} onChange={(e) => setEditForm({...editForm, request: e.target.value})} rows={3} placeholder="조치부서에 요청할 사항을 입력하세요" className="w-full p-2 border rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">첨부파일</label>
-                        <div className="flex items-center gap-3">
-                          <label className="cursor-pointer px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2">
-                            <Icon name="Paperclip" size={16} />
-                            파일 선택
-                            <input type="file" onChange={handleAttachmentChange} className="hidden" />
-                          </label>
-                          {attachmentFile && <span className="text-sm text-blue-600">{attachmentFile.name}</span>}
-                          {!attachmentFile && item.attachment && <a href={item.attachment} target="_blank" className="text-sm text-blue-600 flex items-center gap-1"><Icon name="FileText" size={14} />기존 파일 보기</a>}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    /* 보기 모드 */
-                    <div className="p-4">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 mb-3">
-                        <div><span className="text-xs text-gray-500">이름:</span> <span className="text-sm font-medium">{item.name}</span></div>
-                        <div><span className="text-xs text-gray-500">부서:</span> <span className="text-sm">{item.department}</span></div>
-                        <div><span className="text-xs text-gray-500">구분:</span> <span className="text-sm">{item.category}</span></div>
-                        <div><span className="text-xs text-gray-500">장소:</span> <span className="text-sm">{item.location}</span></div>
-                      </div>
-                      <div className="mb-3">
-                        <span className="text-xs text-gray-500">내용:</span>
-                        <p className="text-sm text-gray-700 mt-1">{item.content}</p>
-                      </div>
-                      {item.photo && (
-                        <div className="mb-3">
-                          <span className="text-xs text-gray-500">접수사진:</span>
-                          <button onClick={() => setSelectedPhoto(item.photo)} className="ml-2 text-blue-500"><Icon name="Image" size={18} /></button>
-                        </div>
-                      )}
-                      {(item.actionDept || item.actionPerson || item.actionContent || item.actionPhoto) && (
-                        <div className="bg-green-50 rounded-lg p-3 mt-3">
-                          <div className="text-xs font-medium text-green-700 mb-2">조치 정보</div>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-sm">
-                            {item.actionDept && <div><span className="text-xs text-gray-500">조치부서:</span> {item.actionDept}</div>}
-                            {item.actionPerson && <div><span className="text-xs text-gray-500">조치담당:</span> {item.actionPerson}</div>}
-                          </div>
-                          {item.actionContent && <div className="mt-2"><span className="text-xs text-gray-500">조치내용:</span><p className="text-sm mt-1">{item.actionContent}</p></div>}
-                          {item.actionPhoto && <div className="mt-2"><span className="text-xs text-gray-500">조치사진:</span><button onClick={() => setSelectedPhoto(item.actionPhoto)} className="ml-2 text-green-500"><Icon name="Image" size={18} /></button></div>}
-                        </div>
-                      )}
-                      {item.request && (
-                        <div className="bg-yellow-50 rounded-lg p-3 mt-3">
-                          <div className="text-xs font-medium text-yellow-700 mb-1">요청사항</div>
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.request}</p>
-                        </div>
-                      )}
-                      {item.attachment && (
-                        <div className="mt-3">
-                          <a href={item.attachment} target="_blank" className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                            <Icon name="FileText" size={16} />첨부파일 보기
-                          </a>
-                        </div>
-                      )}
-                      {item.remarks && (
-                        <div className="bg-gray-50 rounded-lg p-3 mt-3">
-                          <div className="text-xs font-medium text-gray-600 mb-1">비고</div>
-                          <p className="text-sm text-gray-700">{item.remarks}</p>
-                        </div>
-                      )}
-                    </div>
+          {/* 테이블 */}
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[2000px]">
+                <thead className="bg-gray-50 border-b"><tr>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap">일자</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap">이름</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap">부서</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap">구분</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap">장소</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-32">내용</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">접수사진</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">조치여부</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap">조치부서</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap">조치담당</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-32">조치내용</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">조치사진</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-32">요청사항</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">첨부</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-24">비고</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">메일</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">삭제</th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredSubmissions.length === 0 ? (<tr><td colSpan="17" className="px-3 py-8 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</td></tr>) : (
+                    filteredSubmissions.slice().reverse().map((item) => {
+                      const isEdited = editedData[item.id];
+                      const formatDateForInput = (dateStr) => {
+                        if (!dateStr) return '';
+                        const str = String(dateStr);
+                        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
+                        if (match) {
+                          return match[1] + '-' + match[2].padStart(2,'0') + '-' + match[3].padStart(2,'0');
+                        }
+                        return '';
+                      };
+                      return (
+                        <tr key={item.id} className={isEdited ? 'bg-orange-50' : 'hover:bg-gray-50'}>
+                          <td className="px-2 py-2"><input type="date" value={getValue(item.id, 'date', formatDateForInput(item.date))} onChange={(e) => handleFieldChange(item.id, 'date', e.target.value)} className="w-28 p-1 border rounded text-xs" /></td>
+                          <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'name', item.name)} onChange={(e) => handleFieldChange(item.id, 'name', e.target.value)} className="w-16 p-1 border rounded text-xs" /></td>
+                          <td className="px-2 py-2"><select value={getValue(item.id, 'department', item.department)} onChange={(e) => handleFieldChange(item.id, 'department', e.target.value)} className="w-20 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
+                          <td className="px-2 py-2"><select value={getValue(item.id, 'category', item.category)} onChange={(e) => handleFieldChange(item.id, 'category', e.target.value)} className="w-20 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}</select></td>
+                          <td className="px-2 py-2"><select value={getValue(item.id, 'location', item.location)} onChange={(e) => handleFieldChange(item.id, 'location', e.target.value)} className="w-24 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}</select></td>
+                          <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'content', item.content)} onChange={(e) => handleFieldChange(item.id, 'content', e.target.value)} className="w-full p-1 border rounded text-xs" title={item.content} /></td>
+                          <td className="px-2 py-2">
+                            <div className="flex flex-col gap-1">
+                              {/* 원거리 사진 */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-blue-500 w-8">원:</span>
+                                {(editedData[item.id]?.photo !== undefined ? editedData[item.id].photo : item.photo) ? (
+                                  <>
+                                    <button onClick={() => setSelectedPhoto(editedData[item.id]?.photo || item.photo)} className="text-blue-500 hover:text-blue-700" title="원거리 보기"><Icon name="Image" size={14} /></button>
+                                    <button onClick={() => handleFieldChange(item.id, 'photo', '')} className="text-red-400 hover:text-red-600" title="삭제"><Icon name="X" size={12} /></button>
+                                  </>
+                                ) : (
+                                  <label className="cursor-pointer text-gray-400 hover:text-blue-600 text-xs"><Icon name="Upload" size={12} /><input type="file" accept="image/*" onChange={(e) => handlePhotoReplace(item.id, 'photo', e)} className="hidden" /></label>
+                                )}
+                              </div>
+                              {/* 근거리 사진 */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-green-500 w-8">근:</span>
+                                {(editedData[item.id]?.photo2 !== undefined ? editedData[item.id].photo2 : item.photo2) ? (
+                                  <>
+                                    <button onClick={() => setSelectedPhoto(editedData[item.id]?.photo2 || item.photo2)} className="text-green-500 hover:text-green-700" title="근거리 보기"><Icon name="Image" size={14} /></button>
+                                    <button onClick={() => handleFieldChange(item.id, 'photo2', '')} className="text-red-400 hover:text-red-600" title="삭제"><Icon name="X" size={12} /></button>
+                                  </>
+                                ) : (
+                                  <label className="cursor-pointer text-gray-400 hover:text-green-600 text-xs"><Icon name="Upload" size={12} /><input type="file" accept="image/*" onChange={(e) => handlePhotoReplace(item.id, 'photo2', e)} className="hidden" /></label>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 py-2"><select value={getValue(item.id, 'status', item.status)} onChange={(e) => handleFieldChange(item.id, 'status', e.target.value)} className={`w-20 p-1 border rounded text-xs font-medium ${getStatusColor(getValue(item.id, 'status', item.status))}`}><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option><option value="기각">기각</option></select></td>
+                          <td className="px-2 py-2"><select value={getValue(item.id, 'actionDept', item.actionDept)} onChange={(e) => handleFieldChange(item.id, 'actionDept', e.target.value)} className="w-24 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
+                          <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'actionPerson', item.actionPerson)} onChange={(e) => handleFieldChange(item.id, 'actionPerson', e.target.value)} className="w-16 p-1 border rounded text-xs" /></td>
+                          <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'actionContent', item.actionContent)} onChange={(e) => handleFieldChange(item.id, 'actionContent', e.target.value)} className="w-full p-1 border rounded text-xs" /></td>
+                          <td className="px-2 py-2 text-center">
+                            {(editedData[item.id]?.actionPhoto !== undefined ? editedData[item.id].actionPhoto : item.actionPhoto) ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button onClick={() => setSelectedPhoto(editedData[item.id]?.actionPhoto || item.actionPhoto)} className="text-green-500 hover:text-green-700" title="조치사진 보기"><Icon name="Image" size={14} /></button>
+                                <button onClick={() => handleFieldChange(item.id, 'actionPhoto', '')} className="text-red-400 hover:text-red-600" title="삭제"><Icon name="X" size={12} /></button>
+                              </div>
+                            ) : (
+                              <label className="cursor-pointer text-gray-400 hover:text-green-600"><Icon name="Upload" size={14} /><input type="file" accept="image/*" onChange={(e) => handlePhotoReplace(item.id, 'actionPhoto', e)} className="hidden" /></label>
+                            )}
+                          </td>
+                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'request', item.request)} onChange={(e) => handleFieldChange(item.id, 'request', e.target.value)} className="w-full p-1 border rounded text-xs h-12 resize-none" /></td>
+                          <td className="px-2 py-2 text-center">
+                            {attachmentFiles[item.id] ? (
+                              <span className="text-xs text-blue-600">{attachmentFiles[item.id].name.substring(0,8)}...</span>
+                            ) : item.attachment ? (
+                              <a href={item.attachment} target="_blank" className="text-purple-500 hover:text-purple-700"><Icon name="FileText" size={16} /></a>
+                            ) : null}
+                            <label className="cursor-pointer text-gray-400 hover:text-gray-600 ml-1"><Icon name="Paperclip" size={14} /><input type="file" onChange={(e) => handleAttachmentChange(item.id, e)} className="hidden" /></label>
+                          </td>
+                          <td className="px-2 py-2"><textarea value={getValue(item.id, 'remarks', item.remarks)} onChange={(e) => handleFieldChange(item.id, 'remarks', e.target.value)} className="w-full p-1 border rounded text-xs h-12 resize-none" /></td>
+                          <td className="px-2 py-2 text-center">
+                            <input type="checkbox" checked={getValue(item.id, 'emailSent', item.emailSent)} onChange={(e) => handleFieldChange(item.id, 'emailSent', e.target.checked)} className="w-4 h-4 rounded" />
+                          </td>
+                          <td className="px-2 py-2 text-center"><button onClick={() => setDeleteTarget(item.id)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={16} /></button></td>
+                        </tr>
+                      );
+                    })
                   )}
-                </div>
-              ))}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
 
           {selectedPhoto && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPhoto(null)}><div className="relative max-w-3xl max-h-full"><img src={convertDriveUrl(selectedPhoto)} alt="사진" className="max-w-full max-h-[80vh] object-contain rounded-lg bg-white" /><button onClick={() => setSelectedPhoto(null)} className="absolute top-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg"><Icon name="X" size={24} /></button></div></div>)}
           {deleteTarget && <ConfirmModal message="정말 삭제하시겠습니까?" onConfirm={() => { onDelete(deleteTarget); setDeleteTarget(null); }} onCancel={() => setDeleteTarget(null)} />}
         </div>
       );
-        </div>
-      );
     }
 
-    function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendNotifications, onSaveSettings, submissions }) {
-      const [newItem, setNewItem] = React.useState({ departments: '', categories: '', locations: '', actionDepts: '' });
+    function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendSelectedNotifications, onSaveSettings, submissions, onRefresh }) {
+      const [newItem, setNewItem] = React.useState({ departments: '', categories: '', locations: '' });
       const [localDeptSettings, setLocalDeptSettings] = React.useState([]);
-      const [showEmailPreview, setShowEmailPreview] = React.useState(false);
       const [alertModal, setAlertModal] = React.useState(null);
       const [showPasswords, setShowPasswords] = React.useState({});
+      const [showEmailSender, setShowEmailSender] = React.useState(false);
+      const [selectedDept, setSelectedDept] = React.useState('');
+      const [selectedItems, setSelectedItems] = React.useState([]);
+      const [sending, setSending] = React.useState(false);
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        const str = String(dateStr);
+        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
+        if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
+        return str.split(' ')[0];
+      };
 
       React.useEffect(() => {
         const settingsMap = {};
         deptSettings.forEach(s => { settingsMap[s.department] = s; });
-        setLocalDeptSettings(settings.actionDepts.map(dept => ({
+        setLocalDeptSettings(settings.departments.map(dept => ({
           department: dept,
           email: settingsMap[dept]?.email || '',
-          password: settingsMap[dept]?.password || ''
+          password: settingsMap[dept]?.password || '',
+          totalMembers: settingsMap[dept]?.totalMembers || ''
         })));
-      }, [deptSettings, settings.actionDepts]);
+      }, [deptSettings, settings.departments]);
 
       const addItem = (key) => {
         if (newItem[key].trim()) {
@@ -1931,50 +2147,72 @@
         setAlertModal({ message: '설정이 저장되었습니다.', type: 'success' });
       };
 
-      const sendNotifications = async () => {
-        const pendingCount = submissions.filter(s => s.actionDept && s.status !== '조치완료').length;
-        if (pendingCount === 0) { setAlertModal({ message: '미조치 사항이 없습니다.', type: 'info' }); return; }
-        const result = await onSendNotifications();
-        setAlertModal({ message: result.success ? result.message : (result.error || '발송에 실패했습니다.'), type: result.success ? 'success' : 'error' });
+      const getUnsentItems = (dept) => submissions.filter(s => s.actionDept === dept && !s.emailSent);
+      const totalUnsentCount = submissions.filter(s => s.actionDept && !s.emailSent).length;
+      const unsentItemsForDept = selectedDept ? getUnsentItems(selectedDept) : [];
+
+      const toggleItem = (id) => {
+        setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
       };
 
-      const getPendingCount = (dept) => submissions.filter(s => s.actionDept === dept && s.status !== '조치완료').length;
+      const toggleAll = () => {
+        setSelectedItems(selectedItems.length === unsentItemsForDept.length ? [] : unsentItemsForDept.map(i => i.id));
+      };
+
+      const sendSelectedEmails = async () => {
+        if (selectedItems.length === 0) { setAlertModal({ message: '발송할 항목을 선택해주세요.', type: 'error' }); return; }
+        setSending(true);
+        const itemsToSend = submissions.filter(s => selectedItems.includes(s.id));
+        const result = await onSendSelectedNotifications(itemsToSend);
+        setSending(false);
+        if (result.success) {
+          setAlertModal({ message: result.message, type: 'success' });
+          setSelectedItems([]);
+          await onRefresh();
+        } else {
+          setAlertModal({ message: result.error || '발송에 실패했습니다.', type: 'error' });
+        }
+      };
 
       const sections = [
-        { key: 'departments', label: '부서' },
+        { key: 'departments', label: '부서 (접수/조치 공용)' },
         { key: 'categories', label: '구분' },
-        { key: 'locations', label: '장소' },
-        { key: 'actionDepts', label: '조치부서' }
+        { key: 'locations', label: '장소' }
       ];
 
       return (
         <div className="space-y-6">
           <h2 className="text-lg font-bold text-gray-800">설정</h2>
 
-          {/* 부서 설정 */}
+          {/* 부서 설정 (이메일/비밀번호/총인원) */}
           <div className="bg-white rounded-xl shadow-md p-4">
-            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 조치부서 설정</h3>
-            <div className="space-y-4">
+            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 부서별 설정</h3>
+            <div className="space-y-3">
               {localDeptSettings.map((item, idx) => (
                 <div key={idx} className="border border-gray-200 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-medium text-gray-700">{item.department}</span>
-                    {getPendingCount(item.department) > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{getPendingCount(item.department)}</span>}
+                    {getUnsentItems(item.department).length > 0 && <span className="bg-orange-500 text-white text-xs rounded-full px-2 py-0.5">미발송 {getUnsentItems(item.department).length}</span>}
                   </div>
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="flex items-center gap-2">
-                      <Icon name="Mail" size={16} className="text-gray-400" />
+                      <Icon name="Mail" size={14} className="text-gray-400 flex-shrink-0" />
                       <input type="email" value={item.email} onChange={(e) => updateDeptSetting(item.department, 'email', e.target.value)}
-                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="이메일 (쉼표로 여러명)" />
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="이메일" />
                     </div>
                     <div className="flex items-center gap-2">
-                      <Icon name="Lock" size={16} className="text-gray-400" />
+                      <Icon name="Lock" size={14} className="text-gray-400 flex-shrink-0" />
                       <div className="flex-1 relative">
                         <input type={showPasswords[item.department] ? 'text' : 'password'} value={item.password} onChange={(e) => updateDeptSetting(item.department, 'password', e.target.value)}
-                          className="w-full p-2 border border-gray-300 rounded-lg text-sm pr-10" placeholder="비밀번호 (선택)" />
+                          className="w-full p-2 border border-gray-300 rounded-lg text-sm pr-8" placeholder="비밀번호" />
                         <button type="button" onClick={() => setShowPasswords({ ...showPasswords, [item.department]: !showPasswords[item.department] })}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><Icon name={showPasswords[item.department] ? 'EyeOff' : 'Eye'} size={18} /></button>
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"><Icon name={showPasswords[item.department] ? 'EyeOff' : 'Eye'} size={16} /></button>
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Icon name="Users" size={14} className="text-gray-400 flex-shrink-0" />
+                      <input type="number" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원" />
                     </div>
                   </div>
                 </div>
@@ -1982,53 +2220,75 @@
             </div>
           </div>
 
-          {/* 이메일 미리보기 */}
+          {/* 메일 발송 */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-gray-700 flex items-center gap-2"><Icon name="Mail" size={20} /> 이메일 알림</h3>
-              <button onClick={() => setShowEmailPreview(!showEmailPreview)} className={`flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium ${showEmailPreview ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                <Icon name="Eye" size={16} /> 미리보기
+              <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                <Icon name="Mail" size={20} /> 메일 발송
+                {totalUnsentCount > 0 && <span className="bg-orange-500 text-white text-xs rounded-full px-2 py-0.5">미발송 {totalUnsentCount}건</span>}
+              </h3>
+              <button onClick={() => setShowEmailSender(!showEmailSender)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${showEmailSender ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                <Icon name="Send" size={16} /> {showEmailSender ? '닫기' : '발송하기'}
               </button>
             </div>
 
-            {showEmailPreview && (
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
-                <div className="text-sm text-gray-600 mb-3 pb-2 border-b">
-                  <strong>제목:</strong> [SIO] 생산팀 미조치 사항 2건 알림
+            {showEmailSender && (
+              <div className="space-y-4 border-t pt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-2">조치부서 선택</label>
+                  <div className="flex flex-wrap gap-2">
+                    {settings.departments.map((dept, idx) => {
+                      const count = getUnsentItems(dept).length;
+                      return (
+                        <button key={idx} onClick={() => { setSelectedDept(dept); setSelectedItems([]); }}
+                          className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedDept === dept ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>
+                          {dept} {count > 0 && <span className="ml-1 bg-orange-500 text-white rounded-full px-1.5 text-xs">{count}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{`안녕하세요,
 
-현재 생산팀에 할당된 미조치 SIO가 2건 있습니다.
-
-──────────────────────────────
-
-1. [2024/1/15] 생산1라인
-   구분: 안전 | 상태: 접수완료
-   내용: 바닥 미끄러움 발생
-
-2. [2024/1/14] 창고
-   구분: 환경 | 상태: 조치중
-   내용: 조명 불량
-
-──────────────────────────────
-
-SIO 시스템에서 확인 및 조치 부탁드립니다.
-감사합니다.`}</pre>
+                {selectedDept && (
+                  <div className="border border-gray-200 rounded-lg p-3">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="font-medium text-gray-700">{selectedDept} 미발송 목록 ({unsentItemsForDept.length}건)</span>
+                      {unsentItemsForDept.length > 0 && (
+                        <button onClick={toggleAll} className="text-sm text-blue-600">{selectedItems.length === unsentItemsForDept.length ? '전체 해제' : '전체 선택'}</button>
+                      )}
+                    </div>
+                    {unsentItemsForDept.length === 0 ? (
+                      <p className="text-gray-500 text-sm text-center py-4">미발송 항목이 없습니다.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {unsentItemsForDept.map(item => (
+                          <label key={item.id} className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer ${selectedItems.includes(item.id) ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                            <input type="checkbox" checked={selectedItems.includes(item.id)} onChange={() => toggleItem(item.id)} className="mt-1 w-4 h-4" />
+                            <div className="flex-1 text-sm">
+                              <div className="text-gray-600">{formatDate(item.date)} | {item.location}</div>
+                              <div className="text-gray-800">{item.content}</div>
+                              {item.request && <div className="text-yellow-600 text-xs">요청: {item.request}</div>}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {unsentItemsForDept.length > 0 && (
+                      <button onClick={sendSelectedEmails} disabled={sending || selectedItems.length === 0}
+                        className="w-full mt-3 py-2 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                        {sending ? <><Icon name="Loader" size={16} className="spinner" /> 발송 중...</> : <><Icon name="Send" size={16} /> 선택 항목 메일 발송 ({selectedItems.length}건)</>}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-
-            <p className="text-sm text-gray-500 mb-4">미조치 사항이 있는 부서에 위 형식의 이메일을 발송합니다.</p>
           </div>
 
-          {/* 저장 & 발송 버튼 */}
-          <div className="flex gap-2">
-            <button onClick={saveSettings} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
-              <Icon name="Save" size={18} /> 설정 저장
-            </button>
-            <button onClick={sendNotifications} className="flex-1 py-3 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 flex items-center justify-center gap-2">
-              <Icon name="Send" size={18} /> 알림 발송
-            </button>
-          </div>
+          {/* 저장 버튼 */}
+          <button onClick={saveSettings} className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
+            <Icon name="Save" size={18} /> 설정 저장
+          </button>
 
           {/* 목록 관리 */}
           {sections.map(({ key, label }) => (
@@ -2036,12 +2296,12 @@ SIO 시스템에서 확인 및 조치 부탁드립니다.
               <h3 className="font-bold text-gray-700 mb-3">{label} 목록</h3>
               <div className="flex gap-2 mb-3">
                 <input type="text" value={newItem[key]} onChange={(e) => setNewItem({ ...newItem, [key]: e.target.value })}
-                  className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder={`새 ${label} 추가`}
+                  className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder={`새 항목 추가`}
                   onKeyPress={(e) => e.key === 'Enter' && addItem(key)} />
                 <button onClick={() => addItem(key)} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"><Icon name="Plus" size={20} /></button>
               </div>
               <div className="space-y-2">
-                {settings[key].map((item, idx) => (
+                {(settings[key] || []).map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
                     <span className="text-sm text-gray-700">{item}</span>
                     <button onClick={() => removeItem(key, idx)} className="text-red-400 hover:text-red-600"><Icon name="Trash2" size={16} /></button>
