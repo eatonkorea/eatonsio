@@ -413,7 +413,7 @@
           <main className="p-4 pb-24">
             {activeTab === 'submit' && <SubmitForm settings={settings} onSubmit={handleNewSubmission} loading={loading} />}
             {activeTab === 'list' && <SubmissionList submissions={submissions} loading={loading} onRefresh={fetchData} />}
-            {activeTab === 'report' && <ReportTab submissions={submissions} loading={loading} onRefresh={fetchData} />}
+            {activeTab === 'report' && <ReportTab submissions={submissions} deptSettings={deptSettings} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'help' && <HelpTab />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
@@ -1186,7 +1186,7 @@
       );
     }
 
-    function ReportTab({ submissions, loading, onRefresh }) {
+    function ReportTab({ submissions, deptSettings, loading, onRefresh }) {
       const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear());
       const [selectedPieDept, setSelectedPieDept] = React.useState(null);
       
@@ -1636,6 +1636,240 @@
               ))}
               {actionPersonStats.length === 0 && <p className="text-gray-500 text-center py-4">데이터가 없습니다.</p>}
             </div>
+          </div>
+
+          {/* 5. 월별 부서별 SIO 현황 (FY Target 포함) */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+              <Icon name="Target" size={18} /> {selectedYear}년 월별 부서별 SIO 현황
+            </h3>
+            {(() => {
+              // 부서별 총인원 가져오기
+              const deptHeadcount = {};
+              deptSettings.forEach(d => {
+                if (d.department && d.totalMembers) {
+                  deptHeadcount[d.department] = parseInt(d.totalMembers) || 0;
+                }
+              });
+              
+              // 등록된 부서 목록 (총인원이 있는 부서만)
+              const departments = Object.keys(deptHeadcount).filter(d => deptHeadcount[d] > 0);
+              
+              // 전체 총인원
+              const totalHeadcount = departments.reduce((sum, d) => sum + deptHeadcount[d], 0);
+              
+              // FY Target (연간목표) = 총인원 × 2
+              const fyTargetByDept = {};
+              departments.forEach(d => {
+                fyTargetByDept[d] = deptHeadcount[d] * 2;
+              });
+              const totalFyTarget = totalHeadcount * 2;
+              
+              // Month Target = FY Target / 12
+              const monthTargetByDept = {};
+              departments.forEach(d => {
+                monthTargetByDept[d] = Math.round((fyTargetByDept[d] / 12) * 10) / 10;
+              });
+              const totalMonthTarget = Math.round((totalFyTarget / 12) * 10) / 10;
+              
+              // 월별 부서별 접수 현황
+              const monthlyData = {};
+              months.forEach(m => {
+                monthlyData[m] = {};
+                departments.forEach(d => {
+                  monthlyData[m][d] = 0;
+                });
+              });
+              
+              filteredByYear.forEach(s => {
+                const date = parseDate(s.date);
+                if (!date) return;
+                const month = date.getMonth() + 1;
+                const dept = s.department;
+                if (dept && departments.includes(dept)) {
+                  monthlyData[month][dept]++;
+                }
+              });
+              
+              // 월별 MTD (누적) 계산
+              const mtdByMonth = {};
+              months.forEach(m => {
+                mtdByMonth[m] = {};
+                departments.forEach(d => {
+                  let cumulative = 0;
+                  for (let i = 1; i <= m; i++) {
+                    cumulative += monthlyData[i][d] || 0;
+                  }
+                  mtdByMonth[m][d] = cumulative;
+                });
+              });
+              
+              // 월별 전체 합계
+              const monthlyTotal = {};
+              months.forEach(m => {
+                monthlyTotal[m] = departments.reduce((sum, d) => sum + (monthlyData[m][d] || 0), 0);
+              });
+              
+              // MTD 전체 합계
+              const mtdTotal = {};
+              months.forEach(m => {
+                mtdTotal[m] = departments.reduce((sum, d) => sum + (mtdByMonth[m][d] || 0), 0);
+              });
+              
+              // YTD Target (누적 목표)
+              const ytdTargetByMonth = {};
+              months.forEach(m => {
+                ytdTargetByMonth[m] = Math.round(totalMonthTarget * m);
+              });
+              
+              // Target Rate (목표 비율) - 각 월까지의 누적 목표 / 연간 목표
+              const targetRateByMonth = {};
+              months.forEach(m => {
+                targetRateByMonth[m] = Math.round((m / 12) * 100);
+              });
+              
+              // Participant Rate (참여율) = MTD / YTD Target × 100
+              const participantRateByMonth = {};
+              months.forEach(m => {
+                const ytdTarget = ytdTargetByMonth[m];
+                participantRateByMonth[m] = ytdTarget > 0 ? Math.round((mtdTotal[m] / ytdTarget) * 100) : 0;
+              });
+              
+              // 부서별 Participant Rate 계산 및 정렬 (높은 순)
+              const deptParticipantRate = {};
+              departments.forEach(d => {
+                const deptTotal = months.reduce((sum, m) => sum + (monthlyData[m][d] || 0), 0);
+                const deptTarget = fyTargetByDept[d];
+                deptParticipantRate[d] = deptTarget > 0 ? Math.round((deptTotal / deptTarget) * 100) : 0;
+              });
+              const sortedDepartments = [...departments].sort((a, b) => deptParticipantRate[b] - deptParticipantRate[a]);
+              
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 border-b-2 border-gray-300">
+                        <th className="py-3 px-3 text-left text-base font-bold text-gray-700 border border-gray-300 bg-gray-200">Month</th>
+                        {sortedDepartments.map(d => (
+                          <th key={d} className="py-3 px-3 text-center text-base font-bold text-gray-700 border border-gray-300 bg-gray-100 min-w-[70px]">{d}</th>
+                        ))}
+                        <th className="py-3 px-3 text-center text-base font-bold text-gray-700 border border-gray-300 bg-gray-200 min-w-[60px]">MTD</th>
+                        <th className="py-3 px-3 text-center text-base font-bold text-yellow-700 border border-gray-300 bg-yellow-100 min-w-[80px]">Month Target</th>
+                        <th className="py-3 px-3 text-center text-base font-bold text-yellow-700 border border-gray-300 bg-yellow-100 min-w-[80px]">YTD Target</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {months.map(m => {
+                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        return (
+                          <tr key={m} className="border-b hover:bg-gray-50">
+                            <td className="py-2 px-3 text-base font-medium border border-gray-300 bg-gray-50">{monthNames[m-1]}</td>
+                            {sortedDepartments.map(d => (
+                              <td key={d} className="py-2 px-3 text-center text-base border border-gray-300">{monthlyData[m][d] || '-'}</td>
+                            ))}
+                            <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-gray-50">{mtdTotal[m] || '-'}</td>
+                            <td className="py-2 px-3 text-center text-base border border-gray-300 bg-yellow-50">{Math.round(totalMonthTarget)}</td>
+                            <td className="py-2 px-3 text-center text-base border border-gray-300 bg-yellow-50">{ytdTargetByMonth[m]}</td>
+                          </tr>
+                        );
+                      })}
+                      {/* FY Target 행 */}
+                      <tr className="bg-gray-200 border-t-2 border-gray-400">
+                        <td className="py-2 px-3 text-base font-bold border border-gray-300">FY Target</td>
+                        {sortedDepartments.map(d => (
+                          <td key={d} className="py-2 px-3 text-center text-base font-bold border border-gray-300">{fyTargetByDept[d]}</td>
+                        ))}
+                        <td className="py-2 px-3 text-center text-base font-bold border border-gray-300">{totalFyTarget}</td>
+                        <td className="py-2 px-3 border border-gray-300 bg-yellow-50"></td>
+                        <td className="py-2 px-3 border border-gray-300 bg-yellow-50"></td>
+                      </tr>
+                      {/* Total SIO 행 */}
+                      <tr className="bg-cyan-100">
+                        <td className="py-2 px-3 text-base font-bold border border-gray-300 bg-cyan-200">Total SIO</td>
+                        {sortedDepartments.map(d => {
+                          const total = months.reduce((sum, m) => sum + (monthlyData[m][d] || 0), 0);
+                          return <td key={d} className="py-2 px-3 text-center text-base font-bold border border-gray-300">{total || '-'}</td>;
+                        })}
+                        <td className="py-2 px-3 text-center text-base font-bold border border-gray-300">{months.reduce((sum, m) => sum + monthlyTotal[m], 0)}</td>
+                        <td className="py-2 px-3 border border-gray-300"></td>
+                        <td className="py-2 px-3 border border-gray-300"></td>
+                      </tr>
+                      {/* Participant Rate 행 */}
+                      <tr className="bg-cyan-100">
+                        <td className="py-2 px-3 text-base font-bold border border-gray-300 bg-cyan-200">Participant rate</td>
+                        {sortedDepartments.map(d => {
+                          const deptTotal = months.reduce((sum, m) => sum + (monthlyData[m][d] || 0), 0);
+                          const deptTarget = fyTargetByDept[d];
+                          const rate = deptTarget > 0 ? Math.round((deptTotal / deptTarget) * 100) : 0;
+                          const currentYear = new Date().getFullYear();
+                          const currentMonth = new Date().getMonth() + 1;
+                          const expectedRate = selectedYear < currentYear ? 100 : Math.round((currentMonth / 12) * 100);
+                          const isGood = rate >= expectedRate;
+                          return (
+                            <td key={d} className={`py-2 px-3 text-center text-base font-bold border border-gray-300 ${isGood ? 'bg-green-500 text-white' : 'bg-red-400 text-white'}`}>{rate}%</td>
+                          );
+                        })}
+                        <td className={`py-2 px-3 text-center text-base font-bold border border-gray-300 ${(() => {
+                          const total = months.reduce((sum, m) => sum + monthlyTotal[m], 0);
+                          const rate = totalFyTarget > 0 ? Math.round((total / totalFyTarget) * 100) : 0;
+                          const currentYear = new Date().getFullYear();
+                          const currentMonth = new Date().getMonth() + 1;
+                          const expectedRate = selectedYear < currentYear ? 100 : Math.round((currentMonth / 12) * 100);
+                          return rate >= expectedRate ? 'bg-green-500 text-white' : 'bg-red-400 text-white';
+                        })()}`}>
+                          {(() => {
+                            const total = months.reduce((sum, m) => sum + monthlyTotal[m], 0);
+                            return totalFyTarget > 0 ? Math.round((total / totalFyTarget) * 100) + '%' : '0%';
+                          })()}
+                        </td>
+                        <td className="py-2 px-3 border border-gray-300"></td>
+                        <td className="py-2 px-3 border border-gray-300"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  
+                  {/* Monthly Progress */}
+                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm font-bold text-gray-700 mb-2">Monthly Progress</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr>
+                            <td className="py-1 px-2 font-medium text-gray-600"></td>
+                            {months.map(m => {
+                              const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                              return <td key={m} className="py-1 px-2 text-center font-medium text-gray-600">{monthNames[m-1]}</td>;
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="py-1 px-2 text-gray-500">Target rate</td>
+                            {months.map(m => {
+                              const targetRate = targetRateByMonth[m];
+                              const actualRate = participantRateByMonth[m];
+                              const currentYear = new Date().getFullYear();
+                              const currentMonth = new Date().getMonth() + 1;
+                              const isCurrentOrPast = selectedYear < currentYear || (selectedYear === currentYear && m <= currentMonth);
+                              const isGood = actualRate >= targetRate;
+                              return (
+                                <td key={m} className={`py-1 px-2 text-center font-medium ${isCurrentOrPast ? (isGood ? 'bg-green-500 text-white' : 'bg-red-400 text-white') : 'bg-gray-200 text-gray-600'}`}>
+                                  {targetRate}%
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  {departments.length === 0 && (
+                    <p className="text-gray-500 text-center py-8">부서설정에서 총인원을 입력해주세요.</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       );
