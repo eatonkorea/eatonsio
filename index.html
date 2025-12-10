@@ -416,6 +416,7 @@
             {activeTab === 'report' && <ReportTab submissions={submissions} deptSettings={deptSettings} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'help' && <HelpTab />}
+            {activeTab === 'adminMobile' && <AdminMobile submissions={submissions} settings={settings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendSelectedNotifications={handleSendSelectedNotifications} onSaveSettings={saveSettingsToServer} submissions={submissions} onRefresh={fetchData} />}
           </main>
@@ -427,6 +428,7 @@
               <NavButton icon="BarChart3" label="보고서" active={activeTab === 'report'} onClick={() => setActiveTab('report')} />
               <NavButton icon="Wrench" label="조치" active={activeTab === 'action'} onClick={() => setActiveTab('action')} />
               <NavButton icon="HelpCircle" label="도움말" active={activeTab === 'help'} onClick={() => setActiveTab('help')} />
+              <NavButton icon="Smartphone" label="관리M" active={activeTab === 'adminMobile'} onClick={() => handleAdminTabClick('adminMobile')} />
               <NavButton icon="Shield" label="관리" active={activeTab === 'admin'} onClick={() => handleAdminTabClick('admin')} />
               <NavButton icon="Settings" label="설정" active={activeTab === 'settings'} onClick={() => handleAdminTabClick('settings')} />
             </div>
@@ -822,8 +824,8 @@
         if (!formData.name || !formData.department || !formData.category || !formData.location || !formData.content) {
           alert('모든 필수 항목을 입력해주세요.'); return;
         }
-        if (!formData.photo && !formData.photo2) {
-          alert('사진을 최소 한 장 이상 첨부해주세요.'); return;
+        if (!formData.photo || !formData.photo2) {
+          alert('원거리 사진과 근거리 사진 모두 첨부해주세요.'); return;
         }
         setUploading(true);
         setUploadProgress({ loaded: 0, total: 0 });
@@ -890,7 +892,7 @@
                 className="w-full p-3 border border-gray-300 rounded-lg h-32 resize-none" placeholder="상세 내용을 입력하세요" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">사진 첨부 * <span className="text-red-500 text-xs">(최소 1장 이상 필수)</span></label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">사진 첨부 * <span className="text-red-500 text-xs">(원거리/근거리 2장 모두 필수)</span></label>
               <div className="grid grid-cols-2 gap-3">
                 {/* 원거리 사진 */}
                 <div>
@@ -910,7 +912,7 @@
                   ) : (
                     <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer hover:border-blue-500 bg-blue-50">
                       <Icon name="Mountain" size={28} className="text-blue-400 mb-1" />
-                      <span className="text-xs text-blue-600 font-medium text-center px-2">장비/장소를 식별할 수 있는<br/>멀리서 찍은 사진</span>
+                      <span className="text-xs text-blue-600 font-medium text-center px-2">원거리 (필수)<br/>장비/장소 식별 가능한 사진</span>
                       <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
                     </label>
                   )}
@@ -933,7 +935,7 @@
                   ) : (
                     <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-green-300 rounded-lg cursor-pointer hover:border-green-500 bg-green-50">
                       <Icon name="Search" size={28} className="text-green-400 mb-1" />
-                      <span className="text-xs text-green-600 font-medium text-center px-2">가까이서 찍은 사진</span>
+                      <span className="text-xs text-green-600 font-medium text-center px-2">근거리 (필수)<br/>가까이서 찍은 사진</span>
                       <input type="file" accept="image/*" onChange={handlePhoto2Change} className="hidden" />
                     </label>
                   )}
@@ -2553,6 +2555,366 @@
       );
     }
 
+    // 관리(모바일) 탭 컴포넌트
+    function AdminMobile({ submissions, settings, onUpdate, loading, onRefresh }) {
+      const [editingItem, setEditingItem] = React.useState(null);
+      const [editData, setEditData] = React.useState({});
+      const [selectedPhoto, setSelectedPhoto] = React.useState(null);
+      const [saving, setSaving] = React.useState(false);
+      const [statusFilter, setStatusFilter] = React.useState('all');
+      const [compressing, setCompressing] = React.useState(false);
+      const [compressing2, setCompressing2] = React.useState(false);
+      const [photoPreview, setPhotoPreview] = React.useState(null);
+      const [photoPreview2, setPhotoPreview2] = React.useState(null);
+      
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        const str = String(dateStr);
+        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
+        if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
+        return str.split(' ')[0];
+      };
+      
+      const getStatusColor = (status) => {
+        switch (status) {
+          case '조치완료': return 'bg-green-100 text-green-700 border-green-300';
+          case '진행중': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+          case '기각': return 'bg-gray-100 text-gray-700 border-gray-300';
+          default: return 'bg-blue-100 text-blue-700 border-blue-300';
+        }
+      };
+      
+      // 이미지 압축 함수
+      const compressImage = (file, maxWidth = 1024, quality = 0.7) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let width = img.width;
+              let height = img.height;
+              if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        });
+      };
+      
+      // 원거리 사진 변경
+      const handlePhotoChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setCompressing(true);
+        const compressed = await compressImage(file);
+        setPhotoPreview(compressed);
+        setEditData(prev => ({ ...prev, photo: compressed, photoChanged: true }));
+        setCompressing(false);
+      };
+      
+      // 근거리 사진 변경
+      const handlePhoto2Change = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setCompressing2(true);
+        const compressed = await compressImage(file);
+        setPhotoPreview2(compressed);
+        setEditData(prev => ({ ...prev, photo2: compressed, photo2Changed: true }));
+        setCompressing2(false);
+      };
+      
+      // 사진 삭제
+      const deletePhoto = (which) => {
+        if (which === 'photo') {
+          setPhotoPreview(null);
+          setEditData(prev => ({ ...prev, photo: '', photoChanged: true }));
+        } else {
+          setPhotoPreview2(null);
+          setEditData(prev => ({ ...prev, photo2: '', photo2Changed: true }));
+        }
+      };
+      
+      const filteredSubmissions = statusFilter === 'all' 
+        ? [...submissions].reverse() 
+        : [...submissions].filter(s => s.status === statusFilter).reverse();
+      
+      const startEdit = (item) => {
+        setEditingItem(item.id);
+        setEditData({
+          date: item.date || '',
+          name: item.name || '',
+          department: item.department || '',
+          location: item.location || '',
+          content: item.content || '',
+          photo: item.photo || '',
+          photo2: item.photo2 || '',
+          remarks: item.remarks || '',
+          photoChanged: false,
+          photo2Changed: false
+        });
+        setPhotoPreview(null);
+        setPhotoPreview2(null);
+      };
+      
+      const cancelEdit = () => {
+        setEditingItem(null);
+        setEditData({});
+        setPhotoPreview(null);
+        setPhotoPreview2(null);
+      };
+      
+      const saveEdit = async (id) => {
+        setSaving(true);
+        // photoChanged, photo2Changed 필드 제거하고 저장
+        const { photoChanged, photo2Changed, ...saveData } = editData;
+        await onUpdate(id, saveData);
+        setSaving(false);
+        setEditingItem(null);
+        setEditData({});
+        setPhotoPreview(null);
+        setPhotoPreview2(null);
+      };
+      
+      return (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl shadow-md p-4 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <Icon name="Smartphone" size={20} /> 관리(모바일)
+            </h2>
+            <button onClick={onRefresh} disabled={loading} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm">
+              <Icon name="RefreshCw" size={16} className={loading ? 'spinner' : ''} /> 새로고침
+            </button>
+          </div>
+          
+          {/* 상태 필터 */}
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {['all', '접수', '진행중', '조치완료', '기각'].map(status => (
+              <button key={status} onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${statusFilter === status ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border'}`}>
+                {status === 'all' ? '전체' : status} {status === 'all' ? `(${submissions.length})` : `(${submissions.filter(s => s.status === status).length})`}
+              </button>
+            ))}
+          </div>
+          
+          {/* 카드 목록 */}
+          <div className="space-y-3">
+            {filteredSubmissions.map(item => (
+              <div key={item.id} className="bg-white rounded-xl shadow-md overflow-hidden">
+                {editingItem === item.id ? (
+                  // 수정 모드
+                  <div className="p-4 space-y-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-bold text-gray-800">#{item.id} 수정</span>
+                      <div className="flex gap-2">
+                        <button onClick={cancelEdit} className="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg text-sm">취소</button>
+                        <button onClick={() => saveEdit(item.id)} disabled={saving} className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm flex items-center gap-1">
+                          {saving && <Icon name="Loader" size={14} className="spinner" />} 저장
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500">일자</label>
+                        <input type="text" value={editData.date} onChange={(e) => setEditData({...editData, date: e.target.value})}
+                          className="w-full p-2 border rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">이름</label>
+                        <input type="text" value={editData.name} onChange={(e) => setEditData({...editData, name: e.target.value})}
+                          className="w-full p-2 border rounded-lg text-sm" />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500">부서</label>
+                        <select value={editData.department} onChange={(e) => setEditData({...editData, department: e.target.value})}
+                          className="w-full p-2 border rounded-lg text-sm bg-white">
+                          <option value="">선택</option>
+                          {settings.departments.map((d, i) => <option key={i} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">장소</label>
+                        <select value={editData.location} onChange={(e) => setEditData({...editData, location: e.target.value})}
+                          className="w-full p-2 border rounded-lg text-sm bg-white">
+                          <option value="">선택</option>
+                          {settings.locations.map((l, i) => <option key={i} value={l}>{l}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs text-gray-500">내용</label>
+                      <textarea value={editData.content} onChange={(e) => setEditData({...editData, content: e.target.value})}
+                        className="w-full p-2 border rounded-lg text-sm h-20 resize-y" />
+                    </div>
+                    
+                    {/* 사진 수정 */}
+                    <div>
+                      <label className="text-xs text-gray-500 mb-2 block">접수 사진</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* 원거리 사진 */}
+                        <div>
+                          <p className="text-xs text-blue-600 mb-1">원거리</p>
+                          {compressing ? (
+                            <div className="flex items-center justify-center h-24 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50">
+                              <Icon name="Loader" size={20} className="text-blue-500 spinner" />
+                            </div>
+                          ) : (photoPreview || editData.photo) ? (
+                            <div className="relative">
+                              <img src={photoPreview || convertDriveUrl(editData.photo)} alt="원거리" className="w-full h-24 object-cover rounded-lg" />
+                              <button type="button" onClick={() => deletePhoto('photo')} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full">
+                                <Icon name="X" size={14} />
+                              </button>
+                              <label className="absolute bottom-1 right-1 bg-blue-500 text-white p-1 rounded-full cursor-pointer">
+                                <Icon name="Camera" size={14} />
+                                <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                              </label>
+                            </div>
+                          ) : (
+                            <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer hover:border-blue-500 bg-blue-50">
+                              <Icon name="Upload" size={20} className="text-blue-400 mb-1" />
+                              <span className="text-xs text-blue-600">업로드</span>
+                              <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                            </label>
+                          )}
+                        </div>
+                        {/* 근거리 사진 */}
+                        <div>
+                          <p className="text-xs text-green-600 mb-1">근거리</p>
+                          {compressing2 ? (
+                            <div className="flex items-center justify-center h-24 border-2 border-dashed border-green-300 rounded-lg bg-green-50">
+                              <Icon name="Loader" size={20} className="text-green-500 spinner" />
+                            </div>
+                          ) : (photoPreview2 || editData.photo2) ? (
+                            <div className="relative">
+                              <img src={photoPreview2 || convertDriveUrl(editData.photo2)} alt="근거리" className="w-full h-24 object-cover rounded-lg" />
+                              <button type="button" onClick={() => deletePhoto('photo2')} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full">
+                                <Icon name="X" size={14} />
+                              </button>
+                              <label className="absolute bottom-1 right-1 bg-green-500 text-white p-1 rounded-full cursor-pointer">
+                                <Icon name="Camera" size={14} />
+                                <input type="file" accept="image/*" onChange={handlePhoto2Change} className="hidden" />
+                              </label>
+                            </div>
+                          ) : (
+                            <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-green-300 rounded-lg cursor-pointer hover:border-green-500 bg-green-50">
+                              <Icon name="Upload" size={20} className="text-green-400 mb-1" />
+                              <span className="text-xs text-green-600">업로드</span>
+                              <input type="file" accept="image/*" onChange={handlePhoto2Change} className="hidden" />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs text-gray-500">비고</label>
+                      <textarea value={editData.remarks} onChange={(e) => setEditData({...editData, remarks: e.target.value})}
+                        className="w-full p-2 border rounded-lg text-sm h-16 resize-y" />
+                    </div>
+                  </div>
+                ) : (
+                  // 보기 모드
+                  <div className="p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-500">#{item.id}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>{item.status || '접수'}</span>
+                      </div>
+                      <button onClick={() => startEdit(item)} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">
+                        <Icon name="Edit2" size={14} className="inline mr-1" />수정
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div className="flex gap-4">
+                        <span className="text-gray-500 w-12">일자</span>
+                        <span className="text-gray-800">{formatDate(item.date)}</span>
+                      </div>
+                      <div className="flex gap-4">
+                        <span className="text-gray-500 w-12">이름</span>
+                        <span className="text-gray-800">{item.name}</span>
+                      </div>
+                      <div className="flex gap-4">
+                        <span className="text-gray-500 w-12">부서</span>
+                        <span className="text-gray-800">{item.department}</span>
+                      </div>
+                      <div className="flex gap-4">
+                        <span className="text-gray-500 w-12">장소</span>
+                        <span className="text-gray-800">{item.location}</span>
+                      </div>
+                      <div className="flex gap-4">
+                        <span className="text-gray-500 w-12">내용</span>
+                        <span className="text-gray-800 flex-1">{item.content}</span>
+                      </div>
+                    </div>
+                    
+                    {/* 사진 */}
+                    {(item.photo || item.photo2) && (
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {item.photo && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">원거리</p>
+                            <img src={convertDriveUrl(item.photo)} alt="원거리" onClick={() => setSelectedPhoto(item.photo)}
+                              className="w-full h-24 object-cover rounded-lg cursor-pointer" />
+                          </div>
+                        )}
+                        {item.photo2 && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">근거리</p>
+                            <img src={convertDriveUrl(item.photo2)} alt="근거리" onClick={() => setSelectedPhoto(item.photo2)}
+                              className="w-full h-24 object-cover rounded-lg cursor-pointer" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* 비고 */}
+                    {item.remarks && (
+                      <div className="mt-3 p-2 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 mb-1">비고</p>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.remarks}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {filteredSubmissions.length === 0 && (
+              <div className="bg-white rounded-xl shadow-md p-8 text-center text-gray-500">
+                데이터가 없습니다.
+              </div>
+            )}
+          </div>
+          
+          {/* 사진 확대 모달 */}
+          {selectedPhoto && (
+            <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPhoto(null)}>
+              <div className="relative max-w-3xl max-h-full">
+                <img src={convertDriveUrl(selectedPhoto)} alt="사진" className="max-w-full max-h-[80vh] object-contain rounded-lg" />
+                <button onClick={() => setSelectedPhoto(null)} className="absolute top-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg">
+                  <Icon name="X" size={24} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendSelectedNotifications, onSaveSettings, submissions, onRefresh }) {
       const [newItem, setNewItem] = React.useState({ departments: '', categories: '', locations: '' });
       const [localDeptSettings, setLocalDeptSettings] = React.useState([]);
@@ -2636,7 +2998,7 @@
         <div className="space-y-6">
           <h2 className="text-lg font-bold text-gray-800">설정</h2>
 
-          {/* 부서 설정 (이메일/비밀번호/총인원) */}
+          {/* 부서 설정 (이메일/비밀번호/총인원/참조) */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 부서별 설정</h3>
             <div className="space-y-3">
@@ -2646,7 +3008,7 @@
                     <span className="font-medium text-gray-700">{item.department}</span>
                     {getUnsentItems(item.department).length > 0 && <span className="bg-orange-500 text-white text-xs rounded-full px-2 py-0.5">미발송 {getUnsentItems(item.department).length}</span>}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
                     <div className="flex items-center gap-2">
                       <Icon name="Mail" size={14} className="text-gray-400 flex-shrink-0" />
                       <input type="email" value={item.email} onChange={(e) => updateDeptSetting(item.department, 'email', e.target.value)}
@@ -2665,6 +3027,11 @@
                       <Icon name="Users" size={14} className="text-gray-400 flex-shrink-0" />
                       <input type="number" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
                         className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원" />
+                    </div>
+                    <div className="flex items-center gap-2 lg:col-span-2">
+                      <Icon name="Copy" size={14} className="text-gray-400 flex-shrink-0" />
+                      <input type="email" value={item.ccEmail || ''} onChange={(e) => updateDeptSetting(item.department, 'ccEmail', e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="참조(CC) 이메일" />
                     </div>
                   </div>
                 </div>
