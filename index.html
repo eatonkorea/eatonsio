@@ -24,7 +24,7 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const API_URL = 'https://script.google.com/macros/s/AKfycbyaJ2afcct-sLCQ9pAG2HPf78o0rGZZHTvwP4QAWRAb_puRdwOFWNCWdQQNx74tdbfPSw/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyR-2pwkX384ixyF_J8LbnFQGTiH_maLcZ_jib35OfCwxMaXVhTWRg1vUW7EOeSsFIprA/exec';
 
     const convertDriveUrl = (url) => {
       if (!url) return '';
@@ -1646,11 +1646,11 @@
               <Icon name="Target" size={18} /> {selectedYear}년 월별 부서별 SIO 현황
             </h3>
             {(() => {
-              // 부서별 총인원 가져오기
+              // 부서별 총인원 가져오기 (소수점 허용)
               const deptHeadcount = {};
               deptSettings.forEach(d => {
                 if (d.department && d.totalMembers) {
-                  deptHeadcount[d.department] = parseInt(d.totalMembers) || 0;
+                  deptHeadcount[d.department] = parseFloat(d.totalMembers) || 0;
                 }
               });
               
@@ -1660,7 +1660,7 @@
               // 전체 총인원
               const totalHeadcount = departments.reduce((sum, d) => sum + deptHeadcount[d], 0);
               
-              // FY Target (연간목표) = 총인원 × 2
+              // FY Target (연간목표) = 총인원 × 2 (3.5명이면 7건)
               const fyTargetByDept = {};
               departments.forEach(d => {
                 fyTargetByDept[d] = deptHeadcount[d] * 2;
@@ -1808,17 +1808,17 @@
                           const expectedRate = selectedYear < currentYear ? 100 : Math.round((currentMonth / 12) * 100);
                           const isGood = rate >= expectedRate;
                           return (
-                            <td key={d} className={`py-2 px-3 text-center text-base font-bold border border-gray-300 ${isGood ? 'bg-green-500 text-white' : 'bg-red-400 text-white'}`}>{rate}%</td>
+                            <td key={d} className="py-2 px-3 text-center text-base font-bold border border-gray-300 text-white" style={{backgroundColor: isGood ? '#00FF00' : '#FF0000'}}>{rate}%</td>
                           );
                         })}
-                        <td className={`py-2 px-3 text-center text-base font-bold border border-gray-300 ${(() => {
+                        <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 text-white" style={{backgroundColor: (() => {
                           const total = months.reduce((sum, m) => sum + monthlyTotal[m], 0);
                           const rate = totalFyTarget > 0 ? Math.round((total / totalFyTarget) * 100) : 0;
                           const currentYear = new Date().getFullYear();
                           const currentMonth = new Date().getMonth() + 1;
                           const expectedRate = selectedYear < currentYear ? 100 : Math.round((currentMonth / 12) * 100);
-                          return rate >= expectedRate ? 'bg-green-500 text-white' : 'bg-red-400 text-white';
-                        })()}`}>
+                          return rate >= expectedRate ? '#00FF00' : '#FF0000';
+                        })()}}>
                           {(() => {
                             const total = months.reduce((sum, m) => sum + monthlyTotal[m], 0);
                             return totalFyTarget > 0 ? Math.round((total / totalFyTarget) * 100) + '%' : '0%';
@@ -1855,7 +1855,7 @@
                               const isCurrentOrPast = selectedYear < currentYear || (selectedYear === currentYear && m <= currentMonth);
                               const isGood = actualRate >= targetRate;
                               return (
-                                <td key={m} className={`py-1 px-2 text-center font-medium ${isCurrentOrPast ? (isGood ? 'bg-green-500 text-white' : 'bg-red-400 text-white') : 'bg-gray-200 text-gray-600'}`}>
+                                <td key={m} className="py-1 px-2 text-center font-medium text-white" style={{backgroundColor: isCurrentOrPast ? (isGood ? '#00FF00' : '#FF0000') : '#E5E7EB', color: isCurrentOrPast ? 'white' : '#4B5563'}}>
                                   {targetRate}%
                                 </td>
                               );
@@ -1881,16 +1881,38 @@
       const [selectedDept, setSelectedDept] = React.useState(null);
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
       const [passwordDept, setPasswordDept] = React.useState(null);
+      const [actionFilter, setActionFilter] = React.useState('pending'); // 'all', 'pending', 'completed'
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const str = String(dateStr);
+        // 타임스탬프
+        if (/^\d{13}$/.test(str)) {
+          const d = new Date(parseInt(str));
+          return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
+        // ISO 형식
+        if (str.includes('T')) {
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
         const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
         if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
         return str.split(' ')[0];
       };
 
-      const filteredSubmissions = selectedDept ? submissions.filter(s => s.actionDept === selectedDept) : [];
+      // 부서에 할당된 전체 목록
+      const allDeptSubmissions = selectedDept ? submissions.filter(s => s.actionDept === selectedDept) : [];
+      // 미조치 (조치완료, 기각 제외)
+      const pendingSubmissions = allDeptSubmissions.filter(s => s.status !== '조치완료' && s.status !== '기각');
+      // 완료 (조치완료, 기각 포함)
+      const completedSubmissions = allDeptSubmissions.filter(s => s.status === '조치완료' || s.status === '기각');
+      
+      // 필터에 따른 목록
+      const filteredSubmissions = actionFilter === 'all' ? allDeptSubmissions 
+        : actionFilter === 'pending' ? pendingSubmissions 
+        : completedSubmissions;
+      
       const getStatusColor = (status) => {
         switch (status) {
           case '조치완료': return 'bg-green-100 text-green-700 border-green-300';
@@ -1914,7 +1936,8 @@
               <p className="text-center text-gray-600 mb-6">해당 부서를 선택하세요</p>
               <div className="grid grid-cols-2 gap-3">
                 {settings.departments.map((dept, idx) => {
-                  const count = submissions.filter(s => s.actionDept === dept && s.status !== '조치완료').length;
+                  const total = submissions.filter(s => s.actionDept === dept).length;
+                  const pending = submissions.filter(s => s.actionDept === dept && s.status !== '조치완료' && s.status !== '기각').length;
                   const hasPassword = deptSettings.find(d => d.department === dept)?.password;
                   return (
                     <button key={idx} onClick={() => handleDeptClick(dept)}
@@ -1922,7 +1945,8 @@
                       <div className="font-bold text-gray-800 flex items-center justify-center gap-1">
                         {dept}{hasPassword && <Icon name="Lock" size={14} className="text-gray-400" />}
                       </div>
-                      {count > 0 && <div className="text-sm text-red-500 mt-1">미조치 {count}건</div>}
+                      <div className="text-xs text-gray-500 mt-1">전체 {total}건</div>
+                      {pending > 0 && <div className="text-sm text-red-500 font-medium">미조치 {pending}건</div>}
                     </button>
                   );
                 })}
@@ -1942,10 +1966,27 @@
             </div>
             <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
           </div>
+          
+          {/* 필터 버튼 */}
+          <div className="flex gap-2">
+            <button onClick={() => setActionFilter('pending')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${actionFilter === 'pending' ? 'bg-red-500 text-white' : 'bg-white text-gray-600 border'}`}>
+              미조치 ({pendingSubmissions.length})
+            </button>
+            <button onClick={() => setActionFilter('completed')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${actionFilter === 'completed' ? 'bg-green-500 text-white' : 'bg-white text-gray-600 border'}`}>
+              완료 ({completedSubmissions.length})
+            </button>
+            <button onClick={() => setActionFilter('all')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${actionFilter === 'all' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 border'}`}>
+              전체 ({allDeptSubmissions.length})
+            </button>
+          </div>
+          
           {filteredSubmissions.length === 0 ? (
             <div className="bg-white rounded-xl shadow-md p-6 text-center">
               <Icon name="CheckCircle" size={64} className="mx-auto text-green-300 mb-4" />
-              <p className="text-gray-500">할당된 조치 항목이 없습니다.</p>
+              <p className="text-gray-500">{actionFilter === 'pending' ? '미조치 항목이 없습니다.' : actionFilter === 'completed' ? '완료된 항목이 없습니다.' : '할당된 항목이 없습니다.'}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -2145,6 +2186,14 @@
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const str = String(dateStr);
+        if (/^\d{13}$/.test(str)) {
+          const d = new Date(parseInt(str));
+          return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
+        if (str.includes('T')) {
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
         const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
         if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
         return str.split(' ')[0];
@@ -2570,8 +2619,31 @@
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const str = String(dateStr);
+        
+        // 타임스탬프 숫자인 경우 (13자리)
+        if (/^\d{13}$/.test(str)) {
+          const d = new Date(parseInt(str));
+          return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
+        
+        // ISO 형식 (2025-12-09T15:...)
+        if (str.includes('T')) {
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) {
+            return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+          }
+        }
+        
+        // 한국어 날짜 형식 (2025. 12. 6. 오후)
+        const korMatch = str.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+        if (korMatch) {
+          return korMatch[1] + '/' + korMatch[2].padStart(2, '0') + '/' + korMatch[3].padStart(2, '0');
+        }
+        
+        // 일반 날짜 형식 (2025/12/06, 2025-12-06)
         const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
         if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
+        
         return str.split(' ')[0];
       };
       
@@ -2713,7 +2785,7 @@
                   // 수정 모드
                   <div className="p-4 space-y-3">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="font-bold text-gray-800">#{item.id} 수정</span>
+                      <span className="font-bold text-gray-800">수정</span>
                       <div className="flex gap-2">
                         <button onClick={cancelEdit} className="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg text-sm">취소</button>
                         <button onClick={() => saveEdit(item.id)} disabled={saving} className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm flex items-center gap-1">
@@ -2829,10 +2901,7 @@
                   // 보기 모드
                   <div className="p-4">
                     <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-gray-500">#{item.id}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>{item.status || '접수'}</span>
-                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>{item.status || '접수'}</span>
                       <button onClick={() => startEdit(item)} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">
                         <Icon name="Edit2" size={14} className="inline mr-1" />수정
                       </button>
@@ -2924,10 +2993,20 @@
       const [selectedDept, setSelectedDept] = React.useState('');
       const [selectedItems, setSelectedItems] = React.useState([]);
       const [sending, setSending] = React.useState(false);
+      const [sendingReminder, setSendingReminder] = React.useState(false);
+      const [showReminderSender, setShowReminderSender] = React.useState(false);
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const str = String(dateStr);
+        if (/^\d{13}$/.test(str)) {
+          const d = new Date(parseInt(str));
+          return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
+        if (str.includes('T')) {
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
         const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
         if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
         return str.split(' ')[0];
@@ -2940,7 +3019,8 @@
           department: dept,
           email: settingsMap[dept]?.email || '',
           password: settingsMap[dept]?.password || '',
-          totalMembers: settingsMap[dept]?.totalMembers || ''
+          totalMembers: settingsMap[dept]?.totalMembers || '',
+          ccEmail: settingsMap[dept]?.ccEmail || ''
         })));
       }, [deptSettings, settings.departments]);
 
@@ -2988,6 +3068,34 @@
         }
       };
 
+      // 미조치 건수 (부서별)
+      const getPendingByDept = (dept) => {
+        return submissions.filter(s => s.actionDept === dept && s.status !== '조치완료' && s.status !== '기각');
+      };
+      
+      const totalPendingCount = (settings.departments || []).reduce((sum, dept) => sum + getPendingByDept(dept).length, 0);
+
+      // 리마인드 메일 발송
+      const sendReminderEmails = async () => {
+        setSendingReminder(true);
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'sendReminder' })
+          });
+          const result = await response.json();
+          if (result.success) {
+            setAlertModal({ message: result.message, type: 'success' });
+          } else {
+            setAlertModal({ message: result.error || '발송에 실패했습니다.', type: 'error' });
+          }
+        } catch (e) {
+          setAlertModal({ message: '네트워크 오류: ' + e.message, type: 'error' });
+        }
+        setSendingReminder(false);
+      };
+
       const sections = [
         { key: 'departments', label: '부서 (접수/조치 공용)' },
         { key: 'categories', label: '구분' },
@@ -3025,8 +3133,8 @@
                     </div>
                     <div className="flex items-center gap-2">
                       <Icon name="Users" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="number" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
-                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원" />
+                      <input type="number" step="0.5" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원 (예: 3.5)" />
                     </div>
                     <div className="flex items-center gap-2 lg:col-span-2">
                       <Icon name="Copy" size={14} className="text-gray-400 flex-shrink-0" />
@@ -3099,6 +3207,70 @@
                       </button>
                     )}
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 리마인드 메일 발송 */}
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                <Icon name="Bell" size={20} /> 리마인드 메일
+                {totalPendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">미조치 {totalPendingCount}건</span>}
+              </h3>
+              <button onClick={() => setShowReminderSender(!showReminderSender)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${showReminderSender ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                <Icon name="Bell" size={16} /> {showReminderSender ? '닫기' : '보기'}
+              </button>
+            </div>
+
+            {showReminderSender && (
+              <div className="space-y-4 border-t pt-4">
+                <p className="text-sm text-gray-600">미조치 SIO에 대해 각 부서별로 리마인드 메일을 일괄 발송합니다.</p>
+                
+                {/* 부서별 미조치 현황 */}
+                <div className="space-y-2">
+                  {(settings.departments || []).map((dept, idx) => {
+                    const pendingItems = getPendingByDept(dept);
+                    const deptEmail = deptSettings.find(d => d.department === dept)?.email;
+                    if (pendingItems.length === 0) return null;
+                    return (
+                      <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium text-red-800">{dept}</span>
+                          <span className="text-sm text-red-600">{pendingItems.length}건 미조치</span>
+                        </div>
+                        {deptEmail ? (
+                          <p className="text-xs text-gray-500">발송 대상: {deptEmail}</p>
+                        ) : (
+                          <p className="text-xs text-orange-600">⚠️ 이메일 미설정</p>
+                        )}
+                        <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
+                          {pendingItems.slice(0, 5).map(item => (
+                            <div key={item.id} className="text-xs text-gray-600 bg-white rounded px-2 py-1">
+                              {formatDate(item.date)} - {String(item.content || '').slice(0, 30)}{String(item.content || '').length > 30 ? '...' : ''}
+                            </div>
+                          ))}
+                          {pendingItems.length > 5 && (
+                            <div className="text-xs text-gray-400 text-center">...외 {pendingItems.length - 5}건</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {totalPendingCount === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      <Icon name="CheckCircle" size={32} className="mx-auto text-green-400 mb-2" />
+                      미조치 항목이 없습니다.
+                    </div>
+                  )}
+                </div>
+
+                {totalPendingCount > 0 && (
+                  <button onClick={sendReminderEmails} disabled={sendingReminder}
+                    className="w-full py-3 bg-red-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-600">
+                    {sendingReminder ? <><Icon name="Loader" size={16} className="spinner" /> 발송 중...</> : <><Icon name="Bell" size={16} /> 리마인드 메일 일괄 발송</>}
+                  </button>
                 )}
               </div>
             )}
