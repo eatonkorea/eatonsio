@@ -2083,6 +2083,7 @@
       const [newActionPhoto, setNewActionPhoto] = React.useState(null);
       const [saving, setSaving] = React.useState(false);
       const [compressing, setCompressing] = React.useState(false);
+      const [showConfirmModal, setShowConfirmModal] = React.useState(false);
 
       // 이미지 리사이즈 및 압축 함수
       const compressImage = (file, maxSize = 1280, quality = 0.85) => {
@@ -2138,12 +2139,38 @@
         setSaving(false); setNewActionPhoto(null);
       };
 
-      const handleComplete = async () => {
+      const handleCompleteClick = () => {
         if (!actionContent || !actionPerson) { alert('조치내용과 조치담당자를 입력해주세요.'); return; }
+        setShowConfirmModal(true);
+      };
+
+      const handleCompleteConfirm = async () => {
+        setShowConfirmModal(false);
         setSaving(true);
-        const updateData = { actionContent, actionPerson, status: '조치완료' };
+        const today = new Date().toISOString().split('T')[0];
+        const updateData = { actionContent, actionPerson, status: '조치완료', closedDate: today };
         if (newActionPhoto) updateData.actionPhoto = newActionPhoto;
+        
+        // 먼저 업데이트
         await onUpdate(item.id, updateData);
+        
+        // 조치완료 메일 발송
+        try {
+          const itemData = {
+            ...item,
+            actionContent,
+            actionPerson,
+            actionPhoto: newActionPhoto || item.actionPhoto
+          };
+          await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'sendCompletionEmail', itemData })
+          });
+        } catch (e) {
+          console.error('조치완료 메일 발송 실패:', e);
+        }
+        
         setSaving(false); setNewActionPhoto(null);
       };
 
@@ -2166,8 +2193,25 @@
           </div>
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={saving || compressing} className="flex-1 py-2 border border-blue-600 text-blue-600 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
-            <button onClick={handleComplete} disabled={saving || compressing} className="flex-1 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">조치완료</button>
+            <button onClick={handleCompleteClick} disabled={saving || compressing} className="flex-1 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">조치완료</button>
           </div>
+
+          {/* 조치완료 확인 모달 */}
+          {showConfirmModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+                <div className="text-center mb-4">
+                  <Icon name="Mail" size={40} className="mx-auto text-green-500 mb-3" />
+                  <h3 className="font-bold text-lg text-gray-800 mb-2">조치완료 확인</h3>
+                  <p className="text-sm text-gray-600">조치완료를 누르시면<br/>관련부서 및 담당자(공장장님 포함)에<br/>메일이 발송됩니다.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowConfirmModal(false)} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600 font-medium">취소</button>
+                  <button onClick={handleCompleteConfirm} className="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium">조치완료</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
