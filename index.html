@@ -800,6 +800,13 @@
           const compressedBase64 = await compressImage(file, 1280, 0.85);
           const compressedSize = Math.round((compressedBase64.length * 3) / 4); // base64 크기 추정
           
+          // 근거리 사진과 동일한지 체크
+          if (formData.photo2 && compressedBase64 === formData.photo2) {
+            alert('근거리 사진과 동일한 사진입니다. 다른 사진을 선택해주세요.');
+            setCompressing(false);
+            return;
+          }
+          
           console.log(`사진1 압축: ${formatBytes(originalSize)} → ${formatBytes(compressedSize)}`);
           
           setPhotoPreview(compressedBase64);
@@ -818,6 +825,13 @@
           const compressedBase64 = await compressImage(file, 1280, 0.85);
           const compressedSize = Math.round((compressedBase64.length * 3) / 4);
           
+          // 원거리 사진과 동일한지 체크
+          if (formData.photo && compressedBase64 === formData.photo) {
+            alert('원거리 사진과 동일한 사진입니다. 다른 사진을 선택해주세요.');
+            setCompressing2(false);
+            return;
+          }
+          
           console.log(`사진2 압축: ${formatBytes(originalSize)} → ${formatBytes(compressedSize)}`);
           
           setPhotoPreview2(compressedBase64);
@@ -832,6 +846,10 @@
         }
         if (!formData.photo || !formData.photo2) {
           alert('원거리 사진과 근거리 사진 모두 첨부해주세요.'); return;
+        }
+        // 제출 전 한번 더 동일 사진 체크
+        if (formData.photo === formData.photo2) {
+          alert('원거리 사진과 근거리 사진이 동일합니다. 다른 사진을 사용해주세요.'); return;
         }
         setUploading(true);
         setUploadProgress({ loaded: 0, total: 0 });
