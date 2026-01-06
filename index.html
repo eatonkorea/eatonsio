@@ -532,7 +532,7 @@
     }
 
     function HelpTab() {
-      const [openSection, setOpenSection] = React.useState('intro');
+      const [openSection, setOpenSection] = React.useState('flow');
 
       const toggleSection = (section) => {
         setOpenSection(openSection === section ? null : section);
@@ -553,9 +553,154 @@
         </div>
       );
 
+      // Flow 카드 컴포넌트
+      const FlowCard = ({ step, title, icon, color, children }) => (
+        <div className={`relative bg-white rounded-xl shadow-lg p-4 border-l-4 ${color}`}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${color.replace('border-', 'bg-')}`}>
+              {step}
+            </div>
+            <div className="flex items-center gap-2">
+              <Icon name={icon} size={18} className={color.replace('border-', 'text-')} />
+              <span className="font-bold text-gray-800">{title}</span>
+            </div>
+          </div>
+          <div className="text-gray-600 text-sm ml-11">{children}</div>
+        </div>
+      );
+
+      // 화살표 컴포넌트
+      const FlowArrow = () => (
+        <div className="flex justify-center py-2">
+          <div className="flex flex-col items-center">
+            <div className="w-0.5 h-4 bg-gray-300"></div>
+            <Icon name="ChevronDown" size={20} className="text-gray-400 -mt-1" />
+          </div>
+        </div>
+      );
+
       return (
         <div className="space-y-4">
           <h2 className="text-lg font-bold text-gray-800 mb-4">도움말</h2>
+
+          {/* SIO 프로세스 Flow */}
+          <Section id="flow" title="SIO 프로세스 Flow" icon="GitBranch">
+            <div className="pt-4">
+              <p className="text-center text-gray-500 mb-6">SIO 접수부터 조치완료까지의 전체 흐름입니다.</p>
+              
+              {/* Flow 다이어그램 */}
+              <div className="space-y-0">
+                {/* Step 1: 접수 */}
+                <FlowCard step="1" title="SIO 접수" icon="ClipboardList" color="border-blue-500">
+                  <div className="space-y-1">
+                    <p>• 직원이 안전/품질/환경 문제 발견</p>
+                    <p>• <strong>접수탭</strong>에서 SIO 작성</p>
+                    <p>• 근거리, 원거리 총 2장 첨부 (동일 사진 첨부 불가)</p>
+                    <p>• 상태: <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">접수완료</span></p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 2: 목록 확인 */}
+                <FlowCard step="2" title="목록 등록" icon="List" color="border-gray-500">
+                  <div className="space-y-1">
+                    <p>• <strong>목록탭</strong>에서 접수된 SIO 확인 가능</p>
+                    <p>• 전 직원이 현황 조회 가능 (접수자 이름은 미공개)</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 3: 관리자 배정 */}
+                <FlowCard step="3" title="조치부서 배정 & 메일 발송" icon="Settings" color="border-purple-500">
+                  <div className="space-y-1">
+                    <p>• 관리자가 <strong>관리탭/설정탭</strong>에서 조치부서 및 조치담당 설정</p>
+                    <p>• 메일발송 → 해당 부서에 알림 메일 발송</p>
+                    <p>• (접수 메일, 미조치 리마인드 메일 구분)</p>
+                    <p>• Target Date 자동 설정 (30일 뒤)</p>
+                    <p>• 상태: <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">조치중</span></p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 4: 메일 수신 */}
+                <FlowCard step="4" title="메일 수신 & 조치탭 이동" icon="Mail" color="border-orange-500">
+                  <div className="space-y-1">
+                    <p>• 담당 부서가 알림 메일 수신</p>
+                    <p>• 메일 내 링크 클릭 → <strong>조치탭</strong> 해당 부서로 바로 이동</p>
+                    <p>• 각 부서별 설정된 비밀번호 입력 후 조치사항 입력</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 5: 조치 수행 */}
+                <FlowCard step="5" title="조치 수행" icon="Wrench" color="border-green-500">
+                  <div className="space-y-1">
+                    <p>• <strong>조치탭</strong>에서 조치내용 입력</p>
+                    <p>• 조치담당자, 조치내용, 조치사진 기록</p>
+                    <p>• <strong>조치완료</strong> 클릭 시 확인 안내 표시</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 6: 조치완료 */}
+                <FlowCard step="6" title="조치완료 & 메일 발송" icon="CheckCircle" color="border-green-600">
+                  <div className="space-y-1">
+                    <p>• 관련 부서 및 담당자에게 <strong>조치완료 메일</strong> 자동 발송</p>
+                    <p>• Closed Date 자동 기록 (당일)</p>
+                    <p>• 상태: <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">조치완료</span></p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 7: 관리자 확인 */}
+                <FlowCard step="7" title="관리자 확인" icon="UserCheck" color="border-teal-500">
+                  <div className="space-y-1">
+                    <p>• 담당자가 조치완료된 내용을 확인 후 Close</p>
+                    <p>• 추가 조치사항이 필요할 경우 <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">조치중</span>으로 변경 후 재전달</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 8: 보고서 */}
+                <FlowCard step="8" title="보고서 & 통계" icon="BarChart3" color="border-indigo-500">
+                  <div className="space-y-1">
+                    <p>• <strong>보고서탭</strong>에서 월별/부서별 통계 확인</p>
+                    <p>• 조치율, 참여율 분석</p>
+                    <p>• 엑셀 내보내기 가능</p>
+                  </div>
+                </FlowCard>
+              </div>
+
+              {/* 요약 박스 */}
+              <div className="mt-6 bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-xl border border-blue-200">
+                <p className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                  <Icon name="Info" size={16} className="text-blue-600" /> 프로세스 요약
+                </p>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="px-2 py-1 bg-blue-500 text-white rounded">접수</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-purple-500 text-white rounded">배정</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-orange-500 text-white rounded">메일</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-yellow-500 text-white rounded">조치</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-green-500 text-white rounded">완료</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-teal-500 text-white rounded">확인</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-indigo-500 text-white rounded">보고</span>
+                </div>
+              </div>
+            </div>
+          </Section>
 
           <Section id="intro" title="SIO 관리시스템이란?" icon="Info">
             <div className="pt-4 space-y-3">
@@ -612,7 +757,7 @@
                 <span className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">6</span>
                 <div>
                   <p className="font-medium text-gray-800">사진 첨부 (필수)</p>
-                  <p className="text-red-500">사진을 첨부하지 않으면 조치가 어렵습니다. 반드시 첨부해주세요!</p>
+                  <p className="text-red-500">근거리, 원거리 사진 첨부 (필수), 동일 사진 첨부 불가</p>
                 </div>
               </div>
               <div className="bg-yellow-50 p-3 rounded-lg mt-4">
@@ -1233,13 +1378,16 @@
         return null;
       };
       
-      // 연도 목록 생성
-      const years = [...new Set(submissions.map(s => {
+      // 연도 목록 생성 (현재 연도 항상 포함)
+      const currentYear = new Date().getFullYear();
+      const yearsFromData = [...new Set(submissions.map(s => {
         const date = parseDate(s.date);
-        return date ? date.getFullYear() : new Date().getFullYear();
-      }))].sort((a, b) => b - a);
+        return date ? date.getFullYear() : currentYear;
+      }))];
+      if (!yearsFromData.includes(currentYear)) yearsFromData.push(currentYear);
+      const years = yearsFromData.sort((a, b) => b - a);
       
-      if (years.length === 0) years.push(new Date().getFullYear());
+      if (years.length === 0) years.push(currentYear);
       
       // 연도별 필터링
       const filteredByYear = submissions.filter(s => {
