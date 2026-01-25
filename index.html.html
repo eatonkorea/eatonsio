@@ -150,7 +150,12 @@
     }
 
     function App() {
-      const [activeTab, setActiveTab] = React.useState('submit');
+      // URL 파라미터 읽기
+      const urlParams = new URLSearchParams(window.location.search);
+      const initialTab = urlParams.get('tab') || 'submit';
+      const initialDept = urlParams.get('dept') || null;
+      
+      const [activeTab, setActiveTab] = React.useState(initialTab);
       const [submissions, setSubmissions] = React.useState([]);
       const [loading, setLoading] = React.useState(false);
       const [error, setError] = React.useState(null);
@@ -162,6 +167,7 @@
       const [newPassword, setNewPassword] = React.useState('');
       const [confirmPassword, setConfirmPassword] = React.useState('');
       const [testMode, setTestMode] = React.useState(false); // 테스트 모드 (접수 차단)
+      const [urlDept, setUrlDept] = React.useState(initialDept); // URL에서 받은 부서
       
       const defaultSettings = {
         departments: ['생산팀', '품질팀', '안전팀', '관리팀', '시설팀', '환경팀'],
@@ -414,7 +420,7 @@
             {activeTab === 'submit' && <SubmitForm settings={settings} onSubmit={handleNewSubmission} loading={loading} />}
             {activeTab === 'list' && <SubmissionList submissions={submissions} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'report' && <ReportTab submissions={submissions} deptSettings={deptSettings} loading={loading} onRefresh={fetchData} />}
-            {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
+            {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} urlDept={urlDept} onUrlDeptUsed={() => setUrlDept(null)} />}
             {activeTab === 'help' && <HelpTab />}
             {activeTab === 'adminMobile' && <AdminMobile submissions={submissions} settings={settings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
@@ -526,7 +532,7 @@
     }
 
     function HelpTab() {
-      const [openSection, setOpenSection] = React.useState('intro');
+      const [openSection, setOpenSection] = React.useState('flow');
 
       const toggleSection = (section) => {
         setOpenSection(openSection === section ? null : section);
@@ -547,9 +553,154 @@
         </div>
       );
 
+      // Flow 카드 컴포넌트
+      const FlowCard = ({ step, title, icon, color, children }) => (
+        <div className={`relative bg-white rounded-xl shadow-lg p-4 border-l-4 ${color}`}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${color.replace('border-', 'bg-')}`}>
+              {step}
+            </div>
+            <div className="flex items-center gap-2">
+              <Icon name={icon} size={18} className={color.replace('border-', 'text-')} />
+              <span className="font-bold text-gray-800">{title}</span>
+            </div>
+          </div>
+          <div className="text-gray-600 text-sm ml-11">{children}</div>
+        </div>
+      );
+
+      // 화살표 컴포넌트
+      const FlowArrow = () => (
+        <div className="flex justify-center py-2">
+          <div className="flex flex-col items-center">
+            <div className="w-0.5 h-4 bg-gray-300"></div>
+            <Icon name="ChevronDown" size={20} className="text-gray-400 -mt-1" />
+          </div>
+        </div>
+      );
+
       return (
         <div className="space-y-4">
           <h2 className="text-lg font-bold text-gray-800 mb-4">도움말</h2>
+
+          {/* SIO 프로세스 Flow */}
+          <Section id="flow" title="SIO 프로세스 Flow" icon="GitBranch">
+            <div className="pt-4">
+              <p className="text-center text-gray-500 mb-6">SIO 접수부터 조치완료까지의 전체 흐름입니다.</p>
+              
+              {/* Flow 다이어그램 */}
+              <div className="space-y-0">
+                {/* Step 1: 접수 */}
+                <FlowCard step="1" title="SIO 접수" icon="ClipboardList" color="border-blue-500">
+                  <div className="space-y-1">
+                    <p>• 직원이 안전/품질/환경 문제 발견</p>
+                    <p>• <strong>접수탭</strong>에서 SIO 작성</p>
+                    <p>• 근거리, 원거리 총 2장 첨부 (동일 사진 첨부 불가)</p>
+                    <p>• 상태: <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">접수완료</span></p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 2: 목록 확인 */}
+                <FlowCard step="2" title="목록 등록" icon="List" color="border-gray-500">
+                  <div className="space-y-1">
+                    <p>• <strong>목록탭</strong>에서 접수된 SIO 확인 가능</p>
+                    <p>• 전 직원이 현황 조회 가능 (접수자 이름은 미공개)</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 3: 관리자 배정 */}
+                <FlowCard step="3" title="조치부서 배정 & 메일 발송" icon="Settings" color="border-purple-500">
+                  <div className="space-y-1">
+                    <p>• 관리자가 <strong>관리탭/설정탭</strong>에서 조치부서 및 조치담당 설정</p>
+                    <p>• 메일발송 → 해당 부서에 알림 메일 발송</p>
+                    <p>• (접수 메일, 미조치 리마인드 메일 구분)</p>
+                    <p>• Target Date 자동 설정 (30일 뒤)</p>
+                    <p>• 상태: <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">조치중</span></p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 4: 메일 수신 */}
+                <FlowCard step="4" title="메일 수신 & 조치탭 이동" icon="Mail" color="border-orange-500">
+                  <div className="space-y-1">
+                    <p>• 담당 부서가 알림 메일 수신</p>
+                    <p>• 메일 내 링크 클릭 → <strong>조치탭</strong> 해당 부서로 바로 이동</p>
+                    <p>• 각 부서별 설정된 비밀번호 입력 후 조치사항 입력</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 5: 조치 수행 */}
+                <FlowCard step="5" title="조치 수행" icon="Wrench" color="border-green-500">
+                  <div className="space-y-1">
+                    <p>• <strong>조치탭</strong>에서 조치내용 입력</p>
+                    <p>• 조치담당자, 조치내용, 조치사진 기록</p>
+                    <p>• <strong>조치완료</strong> 클릭 시 확인 안내 표시</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 6: 조치완료 */}
+                <FlowCard step="6" title="조치완료 & 메일 발송" icon="CheckCircle" color="border-green-600">
+                  <div className="space-y-1">
+                    <p>• 관련 부서 및 담당자에게 <strong>조치완료 메일</strong> 자동 발송</p>
+                    <p>• Closed Date 자동 기록 (당일)</p>
+                    <p>• 상태: <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">조치완료</span></p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 7: 관리자 확인 */}
+                <FlowCard step="7" title="관리자 확인" icon="UserCheck" color="border-teal-500">
+                  <div className="space-y-1">
+                    <p>• 담당자가 조치완료된 내용을 확인 후 Close</p>
+                    <p>• 추가 조치사항이 필요할 경우 <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">조치중</span>으로 변경 후 재전달</p>
+                  </div>
+                </FlowCard>
+
+                <FlowArrow />
+
+                {/* Step 8: 보고서 */}
+                <FlowCard step="8" title="보고서 & 통계" icon="BarChart3" color="border-indigo-500">
+                  <div className="space-y-1">
+                    <p>• <strong>보고서탭</strong>에서 월별/부서별 통계 확인</p>
+                    <p>• 조치율, 참여율 분석</p>
+                    <p>• 엑셀 내보내기 가능</p>
+                  </div>
+                </FlowCard>
+              </div>
+
+              {/* 요약 박스 */}
+              <div className="mt-6 bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-xl border border-blue-200">
+                <p className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                  <Icon name="Info" size={16} className="text-blue-600" /> 프로세스 요약
+                </p>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="px-2 py-1 bg-blue-500 text-white rounded">접수</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-purple-500 text-white rounded">배정</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-orange-500 text-white rounded">메일</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-yellow-500 text-white rounded">조치</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-green-500 text-white rounded">완료</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-teal-500 text-white rounded">확인</span>
+                  <Icon name="ArrowRight" size={14} className="text-gray-400" />
+                  <span className="px-2 py-1 bg-indigo-500 text-white rounded">보고</span>
+                </div>
+              </div>
+            </div>
+          </Section>
 
           <Section id="intro" title="SIO 관리시스템이란?" icon="Info">
             <div className="pt-4 space-y-3">
@@ -606,7 +757,7 @@
                 <span className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-sm flex-shrink-0">6</span>
                 <div>
                   <p className="font-medium text-gray-800">사진 첨부 (필수)</p>
-                  <p className="text-red-500">사진을 첨부하지 않으면 조치가 어렵습니다. 반드시 첨부해주세요!</p>
+                  <p className="text-red-500">근거리, 원거리 사진 첨부 (필수), 동일 사진 첨부 불가</p>
                 </div>
               </div>
               <div className="bg-yellow-50 p-3 rounded-lg mt-4">
@@ -794,6 +945,13 @@
           const compressedBase64 = await compressImage(file, 1280, 0.85);
           const compressedSize = Math.round((compressedBase64.length * 3) / 4); // base64 크기 추정
           
+          // 근거리 사진과 동일한지 체크
+          if (formData.photo2 && compressedBase64 === formData.photo2) {
+            alert('근거리 사진과 동일한 사진입니다. 다른 사진을 선택해주세요.');
+            setCompressing(false);
+            return;
+          }
+          
           console.log(`사진1 압축: ${formatBytes(originalSize)} → ${formatBytes(compressedSize)}`);
           
           setPhotoPreview(compressedBase64);
@@ -812,6 +970,13 @@
           const compressedBase64 = await compressImage(file, 1280, 0.85);
           const compressedSize = Math.round((compressedBase64.length * 3) / 4);
           
+          // 원거리 사진과 동일한지 체크
+          if (formData.photo && compressedBase64 === formData.photo) {
+            alert('원거리 사진과 동일한 사진입니다. 다른 사진을 선택해주세요.');
+            setCompressing2(false);
+            return;
+          }
+          
           console.log(`사진2 압축: ${formatBytes(originalSize)} → ${formatBytes(compressedSize)}`);
           
           setPhotoPreview2(compressedBase64);
@@ -826,6 +991,10 @@
         }
         if (!formData.photo || !formData.photo2) {
           alert('원거리 사진과 근거리 사진 모두 첨부해주세요.'); return;
+        }
+        // 제출 전 한번 더 동일 사진 체크
+        if (formData.photo === formData.photo2) {
+          alert('원거리 사진과 근거리 사진이 동일합니다. 다른 사진을 사용해주세요.'); return;
         }
         setUploading(true);
         setUploadProgress({ loaded: 0, total: 0 });
@@ -1209,13 +1378,16 @@
         return null;
       };
       
-      // 연도 목록 생성
-      const years = [...new Set(submissions.map(s => {
+      // 연도 목록 생성 (현재 연도 항상 포함)
+      const currentYear = new Date().getFullYear();
+      const yearsFromData = [...new Set(submissions.map(s => {
         const date = parseDate(s.date);
-        return date ? date.getFullYear() : new Date().getFullYear();
-      }))].sort((a, b) => b - a);
+        return date ? date.getFullYear() : currentYear;
+      }))];
+      if (!yearsFromData.includes(currentYear)) yearsFromData.push(currentYear);
+      const years = yearsFromData.sort((a, b) => b - a);
       
-      if (years.length === 0) years.push(new Date().getFullYear());
+      if (years.length === 0) years.push(currentYear);
       
       // 연도별 필터링
       const filteredByYear = submissions.filter(s => {
@@ -1877,11 +2049,24 @@
       );
     }
 
-    function ActionTab({ submissions, settings, deptSettings, onUpdate, loading, onRefresh }) {
+    function ActionTab({ submissions, settings, deptSettings, onUpdate, loading, onRefresh, urlDept, onUrlDeptUsed }) {
       const [selectedDept, setSelectedDept] = React.useState(null);
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
       const [passwordDept, setPasswordDept] = React.useState(null);
       const [actionFilter, setActionFilter] = React.useState('pending'); // 'all', 'pending', 'completed'
+
+      // URL에서 받은 부서로 자동 이동
+      React.useEffect(() => {
+        if (urlDept && settings.departments.includes(urlDept)) {
+          const deptSetting = deptSettings.find(d => d.department === urlDept);
+          if (deptSetting && deptSetting.password) {
+            setPasswordDept(urlDept);
+          } else {
+            setSelectedDept(urlDept);
+          }
+          if (onUrlDeptUsed) onUrlDeptUsed();
+        }
+      }, [urlDept, settings.departments, deptSettings]);
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
@@ -2083,6 +2268,7 @@
       const [newActionPhoto, setNewActionPhoto] = React.useState(null);
       const [saving, setSaving] = React.useState(false);
       const [compressing, setCompressing] = React.useState(false);
+      const [showConfirmModal, setShowConfirmModal] = React.useState(false);
 
       // 이미지 리사이즈 및 압축 함수
       const compressImage = (file, maxSize = 1280, quality = 0.85) => {
@@ -2138,13 +2324,38 @@
         setSaving(false); setNewActionPhoto(null);
       };
 
-      const handleComplete = async () => {
+      const handleCompleteClick = () => {
         if (!actionContent || !actionPerson) { alert('조치내용과 조치담당자를 입력해주세요.'); return; }
+        setShowConfirmModal(true);
+      };
+
+      const handleCompleteConfirm = async () => {
+        setShowConfirmModal(false);
         setSaving(true);
         const today = new Date().toISOString().split('T')[0];
         const updateData = { actionContent, actionPerson, status: '조치완료', closedDate: today };
         if (newActionPhoto) updateData.actionPhoto = newActionPhoto;
+        
+        // 먼저 업데이트
         await onUpdate(item.id, updateData);
+        
+        // 조치완료 메일 발송
+        try {
+          const itemData = {
+            ...item,
+            actionContent,
+            actionPerson,
+            actionPhoto: newActionPhoto || item.actionPhoto
+          };
+          await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'sendCompletionEmail', itemData })
+          });
+        } catch (e) {
+          console.error('조치완료 메일 발송 실패:', e);
+        }
+        
         setSaving(false); setNewActionPhoto(null);
       };
 
@@ -2167,8 +2378,25 @@
           </div>
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={saving || compressing} className="flex-1 py-2 border border-blue-600 text-blue-600 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
-            <button onClick={handleComplete} disabled={saving || compressing} className="flex-1 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">조치완료</button>
+            <button onClick={handleCompleteClick} disabled={saving || compressing} className="flex-1 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">조치완료</button>
           </div>
+
+          {/* 조치완료 확인 모달 */}
+          {showConfirmModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+                <div className="text-center mb-4">
+                  <Icon name="Mail" size={40} className="mx-auto text-green-500 mb-3" />
+                  <h3 className="font-bold text-lg text-gray-800 mb-2">조치완료 확인</h3>
+                  <p className="text-sm text-gray-600">조치완료를 누르시면<br/>관련부서 및 담당자(공장장님 포함)에<br/>메일이 발송됩니다.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowConfirmModal(false)} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600 font-medium">취소</button>
+                  <button onClick={handleCompleteConfirm} className="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium">조치완료</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -2211,10 +2439,30 @@
 
       // 필드 값 가져오기 (수정된 값 우선)
       const getValue = (itemId, field, originalValue) => {
+        let value = originalValue || '';
         if (editedData[itemId] && editedData[itemId][field] !== undefined) {
-          return editedData[itemId][field];
+          value = editedData[itemId][field];
         }
-        return originalValue || '';
+        
+        // 날짜 필드인 경우 YYYY-MM-DD 형식으로 변환 (input type="date" 용)
+        if ((field === 'targetDate' || field === 'closedDate') && value) {
+          const str = String(value);
+          // ISO 형식 (2026-02-23T15:00:00.000Z)
+          if (str.includes('T')) {
+            return str.split('T')[0];
+          }
+          // 이미 YYYY-MM-DD 형식이면 그대로
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+            return str;
+          }
+          // 다른 형식이면 Date로 파싱 시도
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) {
+            return d.toISOString().split('T')[0];
+          }
+        }
+        
+        return value;
       };
 
       // 필드 수정

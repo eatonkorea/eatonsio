@@ -2439,10 +2439,30 @@
 
       // 필드 값 가져오기 (수정된 값 우선)
       const getValue = (itemId, field, originalValue) => {
+        let value = originalValue || '';
         if (editedData[itemId] && editedData[itemId][field] !== undefined) {
-          return editedData[itemId][field];
+          value = editedData[itemId][field];
         }
-        return originalValue || '';
+        
+        // 날짜 필드인 경우 YYYY-MM-DD 형식으로 변환 (input type="date" 용)
+        if ((field === 'targetDate' || field === 'closedDate') && value) {
+          const str = String(value);
+          // ISO 형식 (2026-02-23T15:00:00.000Z)
+          if (str.includes('T')) {
+            return str.split('T')[0];
+          }
+          // 이미 YYYY-MM-DD 형식이면 그대로
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+            return str;
+          }
+          // 다른 형식이면 Date로 파싱 시도
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) {
+            return d.toISOString().split('T')[0];
+          }
+        }
+        
+        return value;
       };
 
       // 필드 수정
