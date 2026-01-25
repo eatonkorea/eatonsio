@@ -2469,10 +2469,10 @@
       const handleFieldChange = (itemId, field, value) => {
         let updates = { [field]: value };
         
-        // 메일발송 체크 시 Target Date 자동 설정 (한달 뒤)
+        // 메일발송 체크 시 Target Date 자동 설정 (30일 뒤)
         if (field === 'emailSent' && value === true) {
           const targetDate = new Date();
-          targetDate.setMonth(targetDate.getMonth() + 1);
+          targetDate.setDate(targetDate.getDate() + 30);
           const targetDateStr = targetDate.toISOString().split('T')[0];
           updates.targetDate = targetDateStr;
         }
