@@ -1981,16 +1981,23 @@
                           const expectedRate = selectedYear < currentYear ? 100 : Math.round((currentMonth / 12) * 100);
                           const isGood = rate >= expectedRate;
                           return (
-                            <td key={d} className="py-2 px-3 text-center text-base font-bold border border-gray-300 text-white" style={{backgroundColor: isGood ? '#00FF00' : '#FF0000'}}>{rate}%</td>
+                            <td key={d} className="py-2 px-3 text-center text-base font-bold border border-gray-300" style={{backgroundColor: isGood ? '#00FF00' : '#FF0000', color: isGood ? '#000000' : '#FFFFFF'}}>{rate}%</td>
                           );
                         })}
-                        <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 text-white" style={{backgroundColor: (() => {
+                        <td className="py-2 px-3 text-center text-base font-bold border border-gray-300" style={{backgroundColor: (() => {
                           const total = months.reduce((sum, m) => sum + monthlyTotal[m], 0);
                           const rate = totalFyTarget > 0 ? Math.round((total / totalFyTarget) * 100) : 0;
                           const currentYear = new Date().getFullYear();
                           const currentMonth = new Date().getMonth() + 1;
                           const expectedRate = selectedYear < currentYear ? 100 : Math.round((currentMonth / 12) * 100);
                           return rate >= expectedRate ? '#00FF00' : '#FF0000';
+                        })(), color: (() => {
+                          const total = months.reduce((sum, m) => sum + monthlyTotal[m], 0);
+                          const rate = totalFyTarget > 0 ? Math.round((total / totalFyTarget) * 100) : 0;
+                          const currentYear = new Date().getFullYear();
+                          const currentMonth = new Date().getMonth() + 1;
+                          const expectedRate = selectedYear < currentYear ? 100 : Math.round((currentMonth / 12) * 100);
+                          return rate >= expectedRate ? '#000000' : '#FFFFFF';
                         })()}}>
                           {(() => {
                             const total = months.reduce((sum, m) => sum + monthlyTotal[m], 0);
@@ -2004,22 +2011,22 @@
                   </table>
                   
                   {/* Monthly Progress */}
-                  <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                    <p className="text-base font-bold text-gray-700 mb-4">Monthly Progress</p>
+                  <div className="mt-5 p-3 bg-gray-50 rounded-lg">
+                    <p className="text-base font-bold text-gray-700 mb-3">Monthly Progress</p>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full">
                         <thead>
                           <tr>
-                            <td className="py-3 px-3 font-bold text-gray-600"></td>
+                            <td className="py-2 px-3 text-base font-bold text-gray-700"></td>
                             {months.map(m => {
                               const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                              return <td key={m} className="py-3 px-3 text-center font-bold text-gray-600">{monthNames[m-1]}</td>;
+                              return <td key={m} className="py-2 px-3 text-center text-base font-bold text-gray-700">{monthNames[m-1]}</td>;
                             })}
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td className="py-4 px-3 text-gray-600 font-medium">Target rate</td>
+                            <td className="py-3 px-3 text-base font-bold text-gray-700">Target rate</td>
                             {months.map(m => {
                               const targetRate = targetRateByMonth[m];
                               const actualRate = participantRateByMonth[m];
@@ -2028,7 +2035,7 @@
                               const isCurrentOrPast = selectedYear < currentYear || (selectedYear === currentYear && m <= currentMonth);
                               const isGood = actualRate >= targetRate;
                               return (
-                                <td key={m} className="py-4 px-3 text-center font-bold text-base" style={{backgroundColor: isCurrentOrPast ? (isGood ? '#00FF00' : '#FF0000') : '#E5E7EB', color: isCurrentOrPast ? 'white' : '#4B5563'}}>
+                                <td key={m} className="py-3 px-3 text-center font-bold text-base" style={{backgroundColor: isCurrentOrPast ? (isGood ? '#00FF00' : '#FF0000') : '#E5E7EB', color: isCurrentOrPast ? (isGood ? '#000000' : '#FFFFFF') : '#4B5563'}}>
                                   {targetRate}%
                                 </td>
                               );
