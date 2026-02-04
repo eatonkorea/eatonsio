@@ -1909,21 +1909,22 @@
                 participantRateByMonth[m] = ytdTarget > 0 ? Math.round((mtdTotal[m] / ytdTarget) * 100) : 0;
               });
               
-              // 부서별 Participant Rate 계산 및 정렬 (높은 순)
+              // 부서별 Participant Rate 계산 (정렬 없이 설정 순서 유지)
               const deptParticipantRate = {};
               departments.forEach(d => {
                 const deptTotal = months.reduce((sum, m) => sum + (monthlyData[m][d] || 0), 0);
                 const deptTarget = fyTargetByDept[d];
                 deptParticipantRate[d] = deptTarget > 0 ? Math.round((deptTotal / deptTarget) * 100) : 0;
               });
-              const sortedDepartments = [...departments].sort((a, b) => deptParticipantRate[b] - deptParticipantRate[a]);
+              // 설정에서 등록된 순서 유지 (정렬 없음)
+              const sortedDepartments = departments;
               
               return (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-gray-100 border-b-2 border-gray-300">
-                        <th className="py-3 px-3 text-left text-base font-bold text-gray-700 border border-gray-300 bg-gray-200">Month</th>
+                        <th className="py-3 px-3 text-center text-base font-bold text-gray-700 border border-gray-300 bg-gray-200">Month</th>
                         {sortedDepartments.map(d => (
                           <th key={d} className="py-3 px-3 text-center text-base font-bold text-gray-700 border border-gray-300 bg-gray-100 min-w-[70px]">{d}</th>
                         ))}
@@ -1937,13 +1938,13 @@
                         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                         return (
                           <tr key={m} className="border-b hover:bg-gray-50">
-                            <td className="py-2 px-3 text-base font-medium border border-gray-300 bg-gray-50">{monthNames[m-1]}</td>
+                            <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-gray-50">{monthNames[m-1]}</td>
                             {sortedDepartments.map(d => (
-                              <td key={d} className="py-2 px-3 text-center text-base border border-gray-300">{monthlyData[m][d] || '-'}</td>
+                              <td key={d} className="py-2 px-3 text-center text-base font-bold border border-gray-300">{monthlyData[m][d] || '-'}</td>
                             ))}
                             <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-gray-50">{mtdTotal[m] || '-'}</td>
-                            <td className="py-2 px-3 text-center text-base border border-gray-300 bg-yellow-50">{Math.round(totalMonthTarget)}</td>
-                            <td className="py-2 px-3 text-center text-base border border-gray-300 bg-yellow-50">{ytdTargetByMonth[m]}</td>
+                            <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-yellow-50">{Math.round(totalMonthTarget)}</td>
+                            <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-yellow-50">{ytdTargetByMonth[m]}</td>
                           </tr>
                         );
                       })}
@@ -2003,22 +2004,22 @@
                   </table>
                   
                   {/* Monthly Progress */}
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm font-bold text-gray-700 mb-2">Monthly Progress</p>
+                  <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                    <p className="text-base font-bold text-gray-700 mb-4">Monthly Progress</p>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-sm">
                         <thead>
                           <tr>
-                            <td className="py-1 px-2 font-medium text-gray-600"></td>
+                            <td className="py-3 px-3 font-bold text-gray-600"></td>
                             {months.map(m => {
                               const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                              return <td key={m} className="py-1 px-2 text-center font-medium text-gray-600">{monthNames[m-1]}</td>;
+                              return <td key={m} className="py-3 px-3 text-center font-bold text-gray-600">{monthNames[m-1]}</td>;
                             })}
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td className="py-1 px-2 text-gray-500">Target rate</td>
+                            <td className="py-4 px-3 text-gray-600 font-medium">Target rate</td>
                             {months.map(m => {
                               const targetRate = targetRateByMonth[m];
                               const actualRate = participantRateByMonth[m];
@@ -2027,7 +2028,7 @@
                               const isCurrentOrPast = selectedYear < currentYear || (selectedYear === currentYear && m <= currentMonth);
                               const isGood = actualRate >= targetRate;
                               return (
-                                <td key={m} className="py-1 px-2 text-center font-medium text-white" style={{backgroundColor: isCurrentOrPast ? (isGood ? '#00FF00' : '#FF0000') : '#E5E7EB', color: isCurrentOrPast ? 'white' : '#4B5563'}}>
+                                <td key={m} className="py-4 px-3 text-center font-bold text-base" style={{backgroundColor: isCurrentOrPast ? (isGood ? '#00FF00' : '#FF0000') : '#E5E7EB', color: isCurrentOrPast ? 'white' : '#4B5563'}}>
                                   {targetRate}%
                                 </td>
                               );
