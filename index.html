@@ -1818,7 +1818,7 @@
               <Icon name="Target" size={18} /> {selectedYear}년 월별 부서별 SIO 현황
             </h3>
             {(() => {
-              // 부서별 총인원 가져오기 (소수점 허용)
+              // 부서별 Target 가져오기
               const deptHeadcount = {};
               deptSettings.forEach(d => {
                 if (d.department && d.totalMembers) {
@@ -1826,18 +1826,18 @@
                 }
               });
               
-              // 등록된 부서 목록 (총인원이 있는 부서만)
+              // 등록된 부서 목록 (Target이 있는 부서만)
               const departments = Object.keys(deptHeadcount).filter(d => deptHeadcount[d] > 0);
               
-              // 전체 총인원
+              // 전체 Target 합계
               const totalHeadcount = departments.reduce((sum, d) => sum + deptHeadcount[d], 0);
               
-              // FY Target (연간목표) = 총인원 × 2 (3.5명이면 7건)
+              // FY Target (연간목표) = 부서별 직접 입력값
               const fyTargetByDept = {};
               departments.forEach(d => {
-                fyTargetByDept[d] = deptHeadcount[d] * 2;
+                fyTargetByDept[d] = deptHeadcount[d];
               });
-              const totalFyTarget = totalHeadcount * 2;
+              const totalFyTarget = totalHeadcount;
               
               // Month Target = FY Target / 12
               const monthTargetByDept = {};
@@ -2047,7 +2047,7 @@
                   </div>
                   
                   {departments.length === 0 && (
-                    <p className="text-gray-500 text-center py-8">부서설정에서 총인원을 입력해주세요.</p>
+                    <p className="text-gray-500 text-center py-8">부서설정에서 Target을 입력해주세요.</p>
                   )}
                 </div>
               );
@@ -2489,6 +2489,11 @@
         if (field === 'status' && value === '조치완료') {
           const today = new Date().toISOString().split('T')[0];
           updates.closedDate = today;
+        }
+        
+        // 조치완료 외 상태로 변경 시 Closed Date 삭제
+        if (field === 'status' && value !== '조치완료') {
+          updates.closedDate = '';
         }
         
         setEditedData(prev => ({
@@ -3252,6 +3257,8 @@
       const [sending, setSending] = React.useState(false);
       const [sendingReminder, setSendingReminder] = React.useState(false);
       const [showReminderSender, setShowReminderSender] = React.useState(false);
+      const [reminderSchedule, setReminderSchedule] = React.useState({ enabled: false, days: [] });
+      const [loadingSchedule, setLoadingSchedule] = React.useState(false);
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
@@ -3283,24 +3290,27 @@
 
       const addItem = (key) => {
         if (newItem[key].trim()) {
-          setSettings({ ...settings, [key]: [...settings[key], newItem[key].trim()] });
+          const updated = { ...settings, [key]: [...settings[key], newItem[key].trim()] };
+          setSettings(updated);
           setNewItem({ ...newItem, [key]: '' });
+          onSaveSettings(updated);
         }
       };
 
-      const removeItem = (key, index) => setSettings({ ...settings, [key]: settings[key].filter((_, i) => i !== index) });
+      const removeItem = (key, index) => {
+        const updated = { ...settings, [key]: settings[key].filter((_, i) => i !== index) };
+        setSettings(updated);
+        onSaveSettings(updated);
+      };
 
       const updateDeptSetting = (dept, field, value) => setLocalDeptSettings(localDeptSettings.map(s => s.department === dept ? { ...s, [field]: value } : s));
 
-      const saveSettings = async () => {
-        await onSaveDeptSettings(localDeptSettings);
-        await onSaveSettings(settings);
-        setAlertModal({ message: '설정이 저장되었습니다.', type: 'success' });
-      };
+      const saveDeptOnBlur = () => onSaveDeptSettings(localDeptSettings);
 
       const getUnsentItems = (dept) => submissions.filter(s => s.actionDept === dept && !s.emailSent);
       const totalUnsentCount = submissions.filter(s => s.actionDept && !s.emailSent).length;
-      const unsentItemsForDept = selectedDept ? getUnsentItems(selectedDept) : [];
+      const allUnsentItems = submissions.filter(s => s.actionDept && !s.emailSent);
+      const unsentItemsForDept = selectedDept === '전체' ? allUnsentItems : selectedDept ? getUnsentItems(selectedDept) : [];
 
       const toggleItem = (id) => {
         setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -3361,6 +3371,54 @@
         setSendingReminder(false);
       };
 
+      // 리마인드 스케줄 불러오기
+      React.useEffect(() => {
+        const loadSchedule = async () => {
+          try {
+            const response = await fetch(API_URL + '?type=reminderSchedule');
+            const result = await response.json();
+            if (result.success && result.data) {
+              setReminderSchedule({
+                enabled: result.data.enabled === 'true' || result.data.enabled === true,
+                days: result.data.days || [],
+              });
+            }
+          } catch (e) { console.error('스케줄 로드 실패:', e); }
+        };
+        loadSchedule();
+      }, []);
+
+      const saveReminderSchedule = async (newSchedule) => {
+        setLoadingSchedule(true);
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'saveReminderSchedule', schedule: newSchedule })
+          });
+          const result = await response.json();
+          if (result.success) {
+            setReminderSchedule(newSchedule);
+            setAlertModal({ 
+              message: newSchedule.enabled ? '리마인드 자동발송이 시작되었습니다.' : '리마인드 자동발송이 중지되었습니다.', 
+              type: 'success' 
+            });
+          } else {
+            setAlertModal({ message: result.error || '설정 저장 실패', type: 'error' });
+          }
+        } catch (e) {
+          setAlertModal({ message: '네트워크 오류: ' + e.message, type: 'error' });
+        }
+        setLoadingSchedule(false);
+      };
+
+      const toggleReminderDay = (dayNum) => {
+        setReminderSchedule(prev => ({
+          ...prev,
+          days: prev.days.includes(dayNum) ? prev.days.filter(d => d !== dayNum) : [...prev.days, dayNum].sort((a,b) => a-b)
+        }));
+      };
+
       const sections = [
         { key: 'departments', label: '부서 (접수/조치 공용)' },
         { key: 'categories', label: '구분' },
@@ -3371,7 +3429,7 @@
         <div className="space-y-6">
           <h2 className="text-lg font-bold text-gray-800">설정</h2>
 
-          {/* 부서 설정 (이메일/비밀번호/총인원/참조) */}
+          {/* 부서 설정 (이메일/비밀번호/Target/참조) */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 부서별 설정</h3>
             <div className="space-y-3">
@@ -3384,26 +3442,26 @@
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
                     <div className="flex items-center gap-2">
                       <Icon name="Mail" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="email" value={item.email} onChange={(e) => updateDeptSetting(item.department, 'email', e.target.value)}
+                      <input type="email" value={item.email} onChange={(e) => updateDeptSetting(item.department, 'email', e.target.value)} onBlur={saveDeptOnBlur}
                         className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="이메일" />
                     </div>
                     <div className="flex items-center gap-2">
                       <Icon name="Lock" size={14} className="text-gray-400 flex-shrink-0" />
                       <div className="flex-1 relative">
-                        <input type={showPasswords[item.department] ? 'text' : 'password'} value={item.password} onChange={(e) => updateDeptSetting(item.department, 'password', e.target.value)}
+                        <input type={showPasswords[item.department] ? 'text' : 'password'} value={item.password} onChange={(e) => updateDeptSetting(item.department, 'password', e.target.value)} onBlur={saveDeptOnBlur}
                           className="w-full p-2 border border-gray-300 rounded-lg text-sm pr-8" placeholder="비밀번호" />
                         <button type="button" onClick={() => setShowPasswords({ ...showPasswords, [item.department]: !showPasswords[item.department] })}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"><Icon name={showPasswords[item.department] ? 'EyeOff' : 'Eye'} size={16} /></button>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Icon name="Users" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="number" step="0.5" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
-                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원 (예: 3.5)" />
+                      <Icon name="Target" size={14} className="text-gray-400 flex-shrink-0" />
+                      <input type="number" step="1" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)} onBlur={saveDeptOnBlur}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="Target (연간 목표 건수)" />
                     </div>
                     <div className="flex items-center gap-2 lg:col-span-2">
                       <Icon name="Copy" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="email" value={item.ccEmail || ''} onChange={(e) => updateDeptSetting(item.department, 'ccEmail', e.target.value)}
+                      <input type="email" value={item.ccEmail || ''} onChange={(e) => updateDeptSetting(item.department, 'ccEmail', e.target.value)} onBlur={saveDeptOnBlur}
                         className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="참조(CC) 이메일" />
                     </div>
                   </div>
@@ -3429,6 +3487,10 @@
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-2">조치부서 선택</label>
                   <div className="flex flex-wrap gap-2">
+                    <button onClick={() => { setSelectedDept('전체'); setSelectedItems([]); }}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedDept === '전체' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>
+                      전체 {totalUnsentCount > 0 && <span className="ml-1 bg-orange-500 text-white rounded-full px-1.5 text-xs">{totalUnsentCount}</span>}
+                    </button>
                     {settings.departments.map((dept, idx) => {
                       const count = getUnsentItems(dept).length;
                       return (
@@ -3444,7 +3506,7 @@
                 {selectedDept && (
                   <div className="border border-gray-200 rounded-lg p-3">
                     <div className="flex justify-between items-center mb-3">
-                      <span className="font-medium text-gray-700">{selectedDept} 미발송 목록 ({unsentItemsForDept.length}건)</span>
+                      <span className="font-medium text-gray-700">{selectedDept === '전체' ? '전체' : selectedDept} 미발송 목록 ({unsentItemsForDept.length}건)</span>
                       {unsentItemsForDept.length > 0 && (
                         <button onClick={toggleAll} className="text-sm text-blue-600">{selectedItems.length === unsentItemsForDept.length ? '전체 해제' : '전체 선택'}</button>
                       )}
@@ -3457,7 +3519,7 @@
                           <label key={item.id} className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer ${selectedItems.includes(item.id) ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
                             <input type="checkbox" checked={selectedItems.includes(item.id)} onChange={() => toggleItem(item.id)} className="mt-1 w-4 h-4" />
                             <div className="flex-1 text-sm">
-                              <div className="text-gray-600">{formatDate(item.date)} | {item.location}</div>
+                              <div className="text-gray-600">{formatDate(item.date)} | {selectedDept === '전체' && <span className="text-blue-600 font-medium">[{item.actionDept}] </span>}{item.location}</div>
                               <div className="text-gray-800">{item.content}</div>
                               {item.request && <div className="text-yellow-600 text-xs">요청: {item.request}</div>}
                             </div>
@@ -3477,74 +3539,103 @@
             )}
           </div>
 
-          {/* 리마인드 메일 발송 */}
+          {/* 리마인드 메일 자동발송 */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                <Icon name="Bell" size={20} /> 리마인드 메일
+                <Icon name="Bell" size={20} /> 리마인드 메일 자동발송
                 {totalPendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">기한초과 {totalPendingCount}건</span>}
               </h3>
-              <button onClick={() => setShowReminderSender(!showReminderSender)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${showReminderSender ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                <Icon name="Bell" size={16} /> {showReminderSender ? '닫기' : '보기'}
-              </button>
+              {reminderSchedule.enabled ? (
+                <span className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> 발송중
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                  <span className="w-2 h-2 bg-gray-400 rounded-full"></span> 중지됨
+                </span>
+              )}
             </div>
 
-            {showReminderSender && (
-              <div className="space-y-4 border-t pt-4">
-                <p className="text-sm text-gray-600">Target Date가 지난 SIO에 대해 각 부서별로 리마인드 메일을 일괄 발송합니다.</p>
-                
-                {/* 부서별 기한초과 현황 */}
-                <div className="space-y-2">
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">Target Date가 지난 SIO에 대해 선택한 요일마다 자동으로 리마인드 메일을 발송합니다.</p>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">발송 요일 선택</label>
+                <div className="flex flex-wrap gap-2">
+                  {[{num:1,label:'월'},{num:2,label:'화'},{num:3,label:'수'},{num:4,label:'목'},{num:5,label:'금'},{num:6,label:'토'},{num:0,label:'일'}].map(day => (
+                    <button key={day.num} onClick={() => toggleReminderDay(day.num)}
+                      disabled={reminderSchedule.enabled}
+                      className={`w-12 h-12 rounded-lg text-sm font-bold border-2 transition-all ${
+                        reminderSchedule.days.includes(day.num) ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-500 border-gray-300 hover:border-red-300'
+                      } ${reminderSchedule.enabled ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                      {day.label}
+                    </button>
+                  ))}
+                </div>
+                {reminderSchedule.days.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    매주 {reminderSchedule.days.sort((a,b)=>a-b).map(d => ['일','월','화','수','목','금','토'][d]+'요일').join(', ')}에 자동 발송
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                {!reminderSchedule.enabled ? (
+                  <button onClick={() => {
+                      if (reminderSchedule.days.length === 0) { setAlertModal({ message: '발송 요일을 1개 이상 선택해주세요.', type: 'error' }); return; }
+                      saveReminderSchedule({ ...reminderSchedule, enabled: true });
+                    }}
+                    disabled={loadingSchedule || reminderSchedule.days.length === 0}
+                    className="flex-1 py-3 bg-green-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-green-600">
+                    {loadingSchedule ? <><Icon name="Loader" size={16} className="spinner" /> 처리 중...</> : <><Icon name="Play" size={16} /> 발송 시작</>}
+                  </button>
+                ) : (
+                  <button onClick={() => saveReminderSchedule({ ...reminderSchedule, enabled: false })}
+                    disabled={loadingSchedule}
+                    className="flex-1 py-3 bg-red-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-600">
+                    {loadingSchedule ? <><Icon name="Loader" size={16} className="spinner" /> 처리 중...</> : <><Icon name="Square" size={16} /> 발송 중지</>}
+                  </button>
+                )}
+                <button onClick={sendReminderEmails} disabled={sendingReminder || totalPendingCount === 0}
+                  className="py-3 px-4 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-orange-600">
+                  {sendingReminder ? <Icon name="Loader" size={16} className="spinner" /> : <><Icon name="Send" size={16} /> 즉시발송</>}
+                </button>
+              </div>
+
+              {totalPendingCount > 0 && (
+                <div className="space-y-2 border-t pt-3">
+                  <p className="text-sm font-medium text-gray-700">기한초과 현황</p>
                   {(settings.departments || []).map((dept, idx) => {
                     const pendingItems = getPendingByDept(dept);
-                    const deptEmail = deptSettings.find(d => d.department === dept)?.email;
                     if (pendingItems.length === 0) return null;
                     return (
                       <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-3">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="font-medium text-red-800">{dept}</span>
-                          <span className="text-sm text-red-600">{pendingItems.length}건 기한초과</span>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-medium text-red-800 text-sm">{dept}</span>
+                          <span className="text-xs text-red-600">{pendingItems.length}건</span>
                         </div>
-                        {deptEmail ? (
-                          <p className="text-xs text-gray-500">발송 대상: {deptEmail}</p>
-                        ) : (
-                          <p className="text-xs text-orange-600">⚠️ 이메일 미설정</p>
-                        )}
-                        <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
-                          {pendingItems.slice(0, 5).map(item => (
+                        <div className="mt-1 max-h-24 overflow-y-auto space-y-1">
+                          {pendingItems.slice(0, 3).map(item => (
                             <div key={item.id} className="text-xs text-gray-600 bg-white rounded px-2 py-1">
                               {formatDate(item.date)} - {String(item.content || '').slice(0, 30)}{String(item.content || '').length > 30 ? '...' : ''}
                             </div>
                           ))}
-                          {pendingItems.length > 5 && (
-                            <div className="text-xs text-gray-400 text-center">...외 {pendingItems.length - 5}건</div>
-                          )}
+                          {pendingItems.length > 3 && <div className="text-xs text-gray-400 text-center">...외 {pendingItems.length - 3}건</div>}
                         </div>
                       </div>
                     );
                   })}
-                  {totalPendingCount === 0 && (
-                    <div className="text-center py-4 text-gray-500">
-                      <Icon name="CheckCircle" size={32} className="mx-auto text-green-400 mb-2" />
-                      기한초과 항목이 없습니다.
-                    </div>
-                  )}
                 </div>
-
-                {totalPendingCount > 0 && (
-                  <button onClick={sendReminderEmails} disabled={sendingReminder}
-                    className="w-full py-3 bg-red-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-600">
-                    {sendingReminder ? <><Icon name="Loader" size={16} className="spinner" /> 발송 중...</> : <><Icon name="Bell" size={16} /> 리마인드 메일 일괄 발송</>}
-                  </button>
-                )}
-              </div>
-            )}
+              )}
+              {totalPendingCount === 0 && (
+                <div className="text-center py-3 text-gray-500 border-t">
+                  <Icon name="CheckCircle" size={28} className="mx-auto text-green-400 mb-1" />
+                  <p className="text-sm">기한초과 항목이 없습니다.</p>
+                </div>
+              )}
+            </div>
           </div>
-
-          {/* 저장 버튼 */}
-          <button onClick={saveSettings} className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
-            <Icon name="Save" size={18} /> 설정 저장
-          </button>
 
           {/* 목록 관리 */}
           {sections.map(({ key, label }) => (
