@@ -10,6 +10,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
   <style>
     .spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -1396,6 +1397,279 @@
         return date.getFullYear() === selectedYear;
       });
 
+      // 대시보드 PPT 생성
+      const generateDashboardPPT = async () => {
+        if (typeof PptxGenJS === 'undefined') { alert('PPT 라이브러리를 로드중입니다. 잠시 후 다시 시도해주세요.'); return; }
+        
+        const pres = new PptxGenJS();
+        pres.layout = 'LAYOUT_16x9';
+        pres.title = 'SIO Dashboard';
+
+        const EATON_RED = 'D32F2F', EATON_DARK = '1A1A2E', WHITE = 'FFFFFF', LIGHT_BG = 'F5F6FA';
+        const GREEN = '43A047', ORANGE = 'FB8C00', BLUE = '1E88E5';
+        const TD = '1A1A2E', TG = '6B7280', TL = 'B0B0C0', BL = 'E5E7EB';
+        const DC = ['1E88E5','43A047','FB8C00','D32F2F','8E24AA','00ACC1','F4511E','3949AB'];
+
+        const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+
+        // Data prep
+        const data = filteredByYear;
+        const inProgress = data.filter(s => s.status === '조치중' || s.status === '진행중').sort((a,b) => {
+          const da = parseDate(a.date), db = parseDate(b.date);
+          return (db||0) - (da||0);
+        });
+        const completed = data.filter(s => s.status === '조치완료').sort((a,b) => {
+          const da = parseDate(a.closedDate || a.date), db = parseDate(b.closedDate || b.date);
+          return (db||0) - (da||0);
+        });
+        const rejected = data.filter(s => s.status === '기각').sort((a,b) => {
+          const da = parseDate(a.date), db = parseDate(b.date);
+          return (db||0) - (da||0);
+        });
+
+        const totalReceived = data.length;
+        const totalCompleted = completed.length;
+        const totalInProgress = inProgress.length;
+        const totalRejected = rejected.length;
+        const rate = totalReceived > 0 ? Math.round((totalCompleted / totalReceived) * 100) : 0;
+
+        // Dept stats
+        const deptMap = {};
+        data.forEach(s => {
+          const d = s.actionDept || s.department || '미지정';
+          if (!deptMap[d]) deptMap[d] = { total: 0, completed: 0, inProgress: 0 };
+          deptMap[d].total++;
+          if (s.status === '조치완료') deptMap[d].completed++;
+          if (s.status === '조치중' || s.status === '진행중') deptMap[d].inProgress++;
+        });
+        const depts = Object.entries(deptMap).sort((a,b) => b[1].total - a[1].total);
+
+        // Helpers
+        const fmtDate = (d) => {
+          const p = parseDate(d);
+          return p ? `${(p.getMonth()+1).toString().padStart(2,'0')}/${p.getDate().toString().padStart(2,'0')}` : '';
+        };
+        const fmtDateFull = (d) => {
+          const p = parseDate(d);
+          return p ? `${p.getFullYear()}/${(p.getMonth()+1).toString().padStart(2,'0')}/${p.getDate().toString().padStart(2,'0')}` : '';
+        };
+        const daysOverdue = (td) => {
+          const t = parseDate(td);
+          if (!t) return 0;
+          const diff = Math.floor((new Date() - t) / 86400000);
+          return diff > 0 ? diff : 0;
+        };
+        const addHdr = (sl, title) => {
+          sl.addShape(pres.shapes.RECTANGLE, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: EATON_DARK } });
+          sl.addShape(pres.shapes.RECTANGLE, { x: 0, y: 0.7, w: 10, h: 0.04, fill: { color: EATON_RED } });
+          sl.addText(title, { x: 0.5, y: 0, w: 9, h: 0.7, fontSize: 20, fontFace: 'Arial', color: WHITE, bold: true, valign: 'middle', margin: 0 });
+          sl.addText(`${selectedYear}년 기준 | Updated: ${today}`, { x: 0.5, y: 0.74, w: 9, h: 0.28, fontSize: 9, fontFace: 'Arial', color: TG, margin: 0 });
+        };
+        const addFtr = (sl, p, t) => {
+          sl.addShape(pres.shapes.RECTANGLE, { x: 0, y: 5.35, w: 10, h: 0.28, fill: { color: EATON_DARK } });
+          sl.addText(`SIO Dashboard  |  ${p} / ${t}`, { x: 0.5, y: 5.35, w: 9, h: 0.28, fontSize: 8, fontFace: 'Arial', color: TL, valign: 'middle', margin: 0 });
+        };
+
+        const PER_PAGE = 8;
+        const ipPg = Math.max(1, Math.ceil(inProgress.length / PER_PAGE));
+        const compPg = Math.max(1, Math.ceil(completed.length / PER_PAGE));
+        const rejPg = rejected.length > 0 ? Math.ceil(rejected.length / PER_PAGE) : 0;
+        const totPg = 1 + ipPg + compPg + (rejPg || 0);
+
+        // ===== SLIDE 1: Overview =====
+        const s1 = pres.addSlide(); s1.background = { color: LIGHT_BG };
+        addHdr(s1, 'SIO Dashboard Overview'); addFtr(s1, 1, totPg);
+
+        const kpis = [
+          { l: '총 접수', v: String(totalReceived), u: '건', c: BLUE },
+          { l: '조치완료', v: String(totalCompleted), u: '건', c: GREEN },
+          { l: '진행중', v: String(totalInProgress), u: '건', c: ORANGE },
+          { l: '완료율', v: String(rate), u: '%', c: rate >= 80 ? GREEN : EATON_RED },
+        ];
+        kpis.forEach((k, i) => {
+          const cx = 0.5 + i * 2.25;
+          s1.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.15, w: 2.1, h: 1.1, fill: { color: WHITE }, shadow: { type: 'outer', blur: 4, offset: 1, angle: 135, color: '000000', opacity: 0.08 } });
+          s1.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.15, w: 0.06, h: 1.1, fill: { color: k.c } });
+          s1.addText(k.l, { x: cx+0.2, y: 1.25, w: 1.8, h: 0.3, fontSize: 11, fontFace: 'Arial', color: TG, margin: 0 });
+          s1.addText([
+            { text: k.v, options: { fontSize: 36, bold: true, color: k.c, fontFace: 'Arial Black' } },
+            { text: ' '+k.u, options: { fontSize: 14, color: TG, fontFace: 'Arial' } }
+          ], { x: cx+0.2, y: 1.5, w: 1.8, h: 0.65, valign: 'middle', margin: 0 });
+        });
+
+        // Dept chart
+        if (depts.length > 0) {
+          s1.addShape(pres.shapes.RECTANGLE, { x: 0.5, y: 2.45, w: 5.5, h: 2.7, fill: { color: WHITE }, shadow: { type: 'outer', blur: 4, offset: 1, angle: 135, color: '000000', opacity: 0.08 } });
+          s1.addText('부서별 접수 현황', { x: 0.7, y: 2.53, w: 5, h: 0.35, fontSize: 12, fontFace: 'Arial', bold: true, color: TD, margin: 0 });
+          s1.addChart(pres.charts.BAR, [{ name: '접수', labels: depts.map(d=>d[0]), values: depts.map(d=>d[1].total) }], {
+            x: 0.6, y: 2.85, w: 5.2, h: 2.2, barDir: 'col',
+            chartColors: DC.slice(0, depts.length), catAxisLabelColor: TG, catAxisLabelFontSize: 8,
+            valAxisLabelColor: TG, valAxisLabelFontSize: 8,
+            valGridLine: { color: 'E8E8E8', size: 0.5 }, catGridLine: { style: 'none' },
+            showLegend: false, showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: TD, dataLabelFontSize: 9, dataLabelFontBold: true, barGapWidthPct: 60,
+          });
+
+          // Dept table
+          const dx = 6.2;
+          s1.addShape(pres.shapes.RECTANGLE, { x: dx, y: 2.45, w: 3.3, h: 2.7, fill: { color: WHITE }, shadow: { type: 'outer', blur: 4, offset: 1, angle: 135, color: '000000', opacity: 0.08 } });
+          s1.addText('부서별 조치현황', { x: dx+0.2, y: 2.53, w: 3, h: 0.35, fontSize: 12, fontFace: 'Arial', bold: true, color: TD, margin: 0 });
+          const dh = ['부서','조치건수','완료','진행중'].map(t => ({ text: t, options: { fill:{color:EATON_DARK}, color:WHITE, bold:true, fontSize:8, fontFace:'Arial', align:'center' } }));
+          const drows = depts.map((d,i) => {
+            const bg = i%2===0 ? WHITE : 'F8F9FA';
+            const act = d[1].completed + d[1].inProgress;
+            return [
+              { text: d[0], options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', bold:true, align:'center', color:TD } },
+              { text: String(act), options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', bold:true, align:'center', color:TD } },
+              { text: String(d[1].completed), options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', align:'center', color:GREEN } },
+              { text: String(d[1].inProgress), options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', align:'center', color:d[1].inProgress>0?ORANGE:TD } },
+            ];
+          });
+          s1.addTable([dh,...drows], { x:dx+0.1, y:2.9, w:3.1, colW:[0.85,0.7,0.7,0.7], border:{pt:0.5,color:BL}, rowH:0.25, autoPage:false });
+        }
+
+        // ===== IN-PROGRESS CARDS =====
+        let pn = 2;
+        for (let pg=0; pg<ipPg; pg++) {
+          const sl = pres.addSlide(); sl.background = { color: LIGHT_BG };
+          addHdr(sl, '진행중 SIO 목록'); addFtr(sl, pn++, totPg);
+          sl.addShape(pres.shapes.RECTANGLE, { x:0.5, y:1.05, w:1.3, h:0.28, fill:{color:ORANGE} });
+          sl.addText(`${inProgress.length}건 진행중`, { x:0.5, y:1.05, w:1.3, h:0.28, fontSize:10, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
+
+          const items = inProgress.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
+          items.forEach((item, i) => {
+            const col=i%4, row=Math.floor(i/4);
+            const cx=0.35+col*2.28, cy=1.5+row*1.98, cW=2.15, cH=1.85;
+            const od = daysOverdue(item.targetDate);
+            const bc = od>30?EATON_RED:od>0?ORANGE:BLUE;
+
+            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:cH, fill:{color:WHITE}, shadow:{type:'outer',blur:3,offset:1,angle:135,color:'000000',opacity:0.07} });
+            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:0.05, fill:{color:bc} });
+
+            // Photo
+            if (item.photo) {
+              try { sl.addImage({ path: item.photo, x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, sizing:{type:'cover',w:0.75,h:0.6} }); }
+              catch(e) { sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, fill:{color:'E0E0E0'} }); }
+            } else {
+              sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, fill:{color:'E0E0E0'} });
+              sl.addText('📷', { x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, fontSize:16, align:'center', valign:'middle', color:'AAAAAA', margin:0 });
+            }
+
+            const ix=cx+0.91, iw=cW-0.99;
+            const badge = od>0 ? ` +${od}일` : '';
+            sl.addText([
+              { text: '#'+(item.id||''), options: { fontSize:9, bold:true, color:TD, fontFace:'Arial' } },
+              ...(badge ? [{ text: badge, options: { fontSize:7, bold:true, color:bc, fontFace:'Arial' } }] : [])
+            ], { x:ix, y:cy+0.1, w:iw, h:0.2, margin:0 });
+            sl.addText(`${fmtDate(item.date)} | ${item.department||''}`, { x:ix, y:cy+0.28, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
+            sl.addText(`📍 ${item.location||''}`, { x:ix, y:cy+0.43, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
+            sl.addText(item.content||'', { x:cx+0.1, y:cy+0.78, w:cW-0.2, h:0.45, fontSize:8, fontFace:'Arial', color:TD, valign:'top', margin:0 });
+            sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.32, w:cW-0.16, h:0.01, fill:{color:BL} });
+            sl.addText([
+              { text:'조치: ', options:{fontSize:7,color:TG,fontFace:'Arial'} },
+              { text:item.actionDept||'-', options:{fontSize:7,bold:true,color:BLUE,fontFace:'Arial'} },
+              { text:`  Target: ${fmtDate(item.targetDate)}`, options:{fontSize:7,color:TG,fontFace:'Arial'} }
+            ], { x:cx+0.08, y:cy+cH-0.28, w:cW-0.16, h:0.22, margin:0, valign:'middle' });
+          });
+        }
+
+        // ===== COMPLETED CARDS (dual photo) =====
+        for (let pg=0; pg<compPg; pg++) {
+          const sl = pres.addSlide(); sl.background = { color: LIGHT_BG };
+          addHdr(sl, '조치완료 SIO 목록'); addFtr(sl, pn++, totPg);
+          sl.addShape(pres.shapes.RECTANGLE, { x:0.5, y:1.05, w:1.5, h:0.28, fill:{color:GREEN} });
+          sl.addText(`${completed.length}건 조치완료`, { x:0.5, y:1.05, w:1.5, h:0.28, fontSize:10, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
+
+          const items = completed.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
+          items.forEach((item, i) => {
+            const col=i%4, row=Math.floor(i/4);
+            const cx=0.35+col*2.28, cy=1.5+row*1.98, cW=2.15, cH=1.85;
+
+            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:cH, fill:{color:WHITE}, shadow:{type:'outer',blur:3,offset:1,angle:135,color:'000000',opacity:0.07} });
+            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:0.05, fill:{color:GREEN} });
+
+            sl.addText([
+              { text: '#'+(item.id||''), options: { fontSize:9, bold:true, color:TD, fontFace:'Arial' } },
+              { text: `  ${fmtDate(item.date)} | ${item.department||''} | 📍${item.location||''}`, options: { fontSize:7, color:TG, fontFace:'Arial' } }
+            ], { x:cx+0.08, y:cy+0.08, w:cW-0.16, h:0.22, margin:0 });
+
+            const pw=0.88, ph=0.58, py=cy+0.32, p1x=cx+0.1, p2x=cx+cW-pw-0.1;
+
+            // Before photo
+            if (item.photo) {
+              try { sl.addImage({ path: item.photo, x:p1x, y:py, w:pw, h:ph, sizing:{type:'cover',w:pw,h:ph} }); }
+              catch(e) { sl.addShape(pres.shapes.RECTANGLE, { x:p1x, y:py, w:pw, h:ph, fill:{color:'EEEEEE'} }); }
+            } else {
+              sl.addShape(pres.shapes.RECTANGLE, { x:p1x, y:py, w:pw, h:ph, fill:{color:'EEEEEE'} });
+            }
+            sl.addShape(pres.shapes.RECTANGLE, { x:p1x, y:py+ph-0.14, w:pw, h:0.14, fill:{color:ORANGE} });
+            sl.addText('접수', { x:p1x, y:py+ph-0.14, w:pw, h:0.14, fontSize:7, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
+
+            sl.addText('→', { x:p1x+pw, y:py, w:p2x-p1x-pw, h:ph, fontSize:10, align:'center', valign:'middle', color:TG, margin:0 });
+
+            // After photo
+            if (item.actionPhoto) {
+              try { sl.addImage({ path: item.actionPhoto, x:p2x, y:py, w:pw, h:ph, sizing:{type:'cover',w:pw,h:ph} }); }
+              catch(e) { sl.addShape(pres.shapes.RECTANGLE, { x:p2x, y:py, w:pw, h:ph, fill:{color:'E8F5E9'} }); }
+            } else {
+              sl.addShape(pres.shapes.RECTANGLE, { x:p2x, y:py, w:pw, h:ph, fill:{color:'E8F5E9'} });
+              sl.addText('✅', { x:p2x, y:py, w:pw, h:ph-0.14, fontSize:14, align:'center', valign:'middle', color:'81C784', margin:0 });
+            }
+            sl.addShape(pres.shapes.RECTANGLE, { x:p2x, y:py+ph-0.14, w:pw, h:0.14, fill:{color:GREEN} });
+            sl.addText('완료', { x:p2x, y:py+ph-0.14, w:pw, h:0.14, fontSize:7, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
+
+            sl.addText([
+              { text: item.content||'', options: { fontSize:7, color:TG, fontFace:'Arial', breakLine:true } },
+              { text: '→ '+(item.actionContent||''), options: { fontSize:7, bold:true, color:GREEN, fontFace:'Arial' } }
+            ], { x:cx+0.08, y:py+ph+0.04, w:cW-0.16, h:0.38, valign:'top', margin:0 });
+
+            sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.26, w:cW-0.16, h:0.01, fill:{color:BL} });
+            sl.addText(`완료일: ${fmtDate(item.closedDate)}`, { x:cx+0.08, y:cy+cH-0.22, w:cW-0.16, h:0.18, fontSize:7, fontFace:'Arial', bold:true, color:GREEN, margin:0, valign:'middle' });
+          });
+        }
+
+        // ===== REJECTED CARDS =====
+        if (rejected.length > 0) {
+          for (let pg=0; pg<rejPg; pg++) {
+            const sl = pres.addSlide(); sl.background = { color: LIGHT_BG };
+            addHdr(sl, '기각 SIO 목록'); addFtr(sl, pn++, totPg);
+            sl.addShape(pres.shapes.RECTANGLE, { x:0.5, y:1.05, w:1.1, h:0.28, fill:{color:'9E9E9E'} });
+            sl.addText(`${rejected.length}건 기각`, { x:0.5, y:1.05, w:1.1, h:0.28, fontSize:10, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
+
+            const items = rejected.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
+            items.forEach((item, i) => {
+              const col=i%4, row=Math.floor(i/4);
+              const cx=0.35+col*2.28, cy=1.5+row*1.98, cW=2.15, cH=1.85;
+
+              sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:cH, fill:{color:WHITE}, shadow:{type:'outer',blur:3,offset:1,angle:135,color:'000000',opacity:0.07} });
+              sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:0.05, fill:{color:'9E9E9E'} });
+
+              if (item.photo) {
+                try { sl.addImage({ path: item.photo, x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, sizing:{type:'cover',w:0.75,h:0.6} }); }
+                catch(e) { sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, fill:{color:'E0E0E0'} }); }
+              } else {
+                sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, fill:{color:'E0E0E0'} });
+                sl.addText('📷', { x:cx+0.08, y:cy+0.12, w:0.75, h:0.6, fontSize:16, align:'center', valign:'middle', color:'AAAAAA', margin:0 });
+              }
+
+              const ix=cx+0.91, iw=cW-0.99;
+              sl.addText('#'+(item.id||''), { x:ix, y:cy+0.1, w:iw, h:0.2, fontSize:9, bold:true, fontFace:'Arial', color:TD, margin:0 });
+              sl.addText(`${fmtDate(item.date)} | ${item.department||''}`, { x:ix, y:cy+0.28, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
+              sl.addText(`📍 ${item.location||''}`, { x:ix, y:cy+0.43, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
+              sl.addText(item.content||'', { x:cx+0.1, y:cy+0.78, w:cW-0.2, h:0.35, fontSize:8, fontFace:'Arial', color:TD, valign:'top', margin:0 });
+
+              sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.38, w:cW-0.16, h:0.01, fill:{color:BL} });
+              sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.34, w:cW-0.16, h:0.28, fill:{color:'FFF5F5'} });
+              sl.addText([
+                { text:'기각: ', options:{fontSize:7,color:TG,fontFace:'Arial'} },
+                { text:item.remarks||item.actionContent||'', options:{fontSize:7,bold:true,color:EATON_RED,fontFace:'Arial'} }
+              ], { x:cx+0.12, y:cy+cH-0.34, w:cW-0.24, h:0.28, margin:0, valign:'middle' });
+            });
+          }
+        }
+
+        pres.writeFile({ fileName: `SIO_Dashboard_${selectedYear}.pptx` });
+      };
+
       // 1. 월별 부서별 접수 현황 (부서=행, 월=열)
       const getMonthlyDeptStats = () => {
         const stats = {};
@@ -1587,12 +1861,18 @@
 
           {/* 필터 - 연도만 */}
           <div className="bg-white rounded-xl shadow-md p-4">
-            <div className="flex gap-3 items-center">
-              <label className="text-sm text-gray-600">연도 선택</label>
-              <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="p-2 border border-gray-300 rounded-lg text-sm">
-                {years.map(y => <option key={y} value={y}>{y}년</option>)}
-              </select>
+            <div className="flex gap-3 items-center justify-between">
+              <div className="flex gap-3 items-center">
+                <label className="text-sm text-gray-600">연도 선택</label>
+                <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="p-2 border border-gray-300 rounded-lg text-sm">
+                  {years.map(y => <option key={y} value={y}>{y}년</option>)}
+                </select>
+              </div>
+              <button onClick={generateDashboardPPT} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors">
+                <Icon name="Monitor" size={16} />
+                대시보드 PPT
+              </button>
             </div>
           </div>
 
