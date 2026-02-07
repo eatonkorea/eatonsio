@@ -1425,29 +1425,27 @@
           if (item.photo) allUrls.add(item.photo);
           if (item.actionPhoto) allUrls.add(item.actionPhoto);
         });
+        console.log('대시보드: 이미지 URL', allUrls.size, '개 수집됨');
 
-        // 2) Apps Script 프록시로 base64 변환 (5개씩 배치)
+        // 2) Apps Script 프록시로 base64 변환 (POST, 3개씩 배치)
         const imgMap = {};
         const urlArr = [...allUrls].filter(u => u && u.startsWith('http'));
         if (urlArr.length > 0) {
-          const batchSize = 5;
-          const batches = [];
+          const batchSize = 3;
           for (let i = 0; i < urlArr.length; i += batchSize) {
-            batches.push(urlArr.slice(i, i + batchSize));
-          }
-          
-          let loadedCount = 0;
-          for (const batch of batches) {
+            const batch = urlArr.slice(i, i + batchSize);
             try {
-              const urlsParam = encodeURIComponent(batch.join('|||'));
-              const resp = await fetch(API_URL + '?type=imageProxy&urls=' + urlsParam);
+              const resp = await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'imageProxy', urls: batch })
+              });
               const result = await resp.json();
               if (result.success && result.data) {
                 Object.assign(imgMap, result.data);
               }
-              loadedCount += batch.length;
-            } catch(e) { /* 실패한 배치 무시 */ }
+            } catch(e) { console.error('Image batch error:', e); }
           }
+          console.log('대시보드: 이미지', Object.keys(imgMap).length, '개 로드 완료');
         }
 
         // 3) PPT 생성
