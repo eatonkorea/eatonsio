@@ -1530,7 +1530,7 @@
           { l: '완료율', v: String(rate), u: '%', c: rate >= 80 ? GREEN : EATON_RED },
         ];
         kpis.forEach((k, i) => {
-          const cx = 0.5 + i * 2.25;
+          const cx = 0.5 + i * 2.3;
           s1.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.15, w: 2.1, h: 1.1, fill: { color: WHITE }, shadow: { type: 'outer', blur: 4, offset: 1, angle: 135, color: '000000', opacity: 0.08 } });
           s1.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.15, w: 0.06, h: 1.1, fill: { color: k.c } });
           s1.addText(k.l, { x: cx+0.2, y: 1.25, w: 1.8, h: 0.3, fontSize: 11, fontFace: 'Arial', color: TG, margin: 0 });
