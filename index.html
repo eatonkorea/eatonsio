@@ -10,7 +10,6 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
   <style>
     .spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -1259,7 +1258,7 @@
           )}
           
           <div className="space-y-3">
-            {filteredSubmissions.slice().reverse().map((item) => (
+            {filteredSubmissions.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).map((item) => (
               <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
                 {/* 상태 표시 */}
                 <div className="flex justify-between items-center mb-3">
@@ -1361,7 +1360,6 @@
     function ReportTab({ submissions, deptSettings, loading, onRefresh }) {
       const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear());
       const [selectedPieDept, setSelectedPieDept] = React.useState(null);
-      const [dashboardLoading, setDashboardLoading] = React.useState(false);
       
       // 날짜 파싱 함수
       const parseDate = (dateStr) => {
@@ -1397,301 +1395,6 @@
         if (!date) return false;
         return date.getFullYear() === selectedYear;
       });
-
-      // 대시보드 PPT 생성
-      const generateDashboardPPT = async () => {
-        if (typeof PptxGenJS === 'undefined') { alert('PPT 라이브러리를 로드중입니다. 잠시 후 다시 시도해주세요.'); return; }
-        setDashboardLoading(true);
-        try {
-        
-        // Data prep
-        const data = filteredByYear;
-        const inProgress = data.filter(s => s.status === '조치중' || s.status === '진행중').sort((a,b) => {
-          const da = parseDate(a.date), db = parseDate(b.date);
-          return (db||0) - (da||0);
-        });
-        const completed = data.filter(s => s.status === '조치완료').sort((a,b) => {
-          const da = parseDate(a.closedDate || a.date), db = parseDate(b.closedDate || b.date);
-          return (db||0) - (da||0);
-        });
-        const rejected = data.filter(s => s.status === '기각').sort((a,b) => {
-          const da = parseDate(a.date), db = parseDate(b.date);
-          return (db||0) - (da||0);
-        });
-
-        // 1) 모든 이미지 URL 수집
-        const allUrls = new Set();
-        [...inProgress, ...completed, ...rejected].forEach(item => {
-          if (item.photo) allUrls.add(item.photo);
-          if (item.actionPhoto) allUrls.add(item.actionPhoto);
-        });
-        console.log('대시보드: 이미지 URL', allUrls.size, '개 수집됨');
-
-        // 2) Apps Script 프록시로 base64 변환 (POST, 3개씩 배치)
-        const imgMap = {};
-        const urlArr = [...allUrls].filter(u => u && u.startsWith('http'));
-        if (urlArr.length > 0) {
-          const batchSize = 3;
-          for (let i = 0; i < urlArr.length; i += batchSize) {
-            const batch = urlArr.slice(i, i + batchSize);
-            try {
-              const resp = await fetch(API_URL, {
-                method: 'POST',
-                body: JSON.stringify({ action: 'imageProxy', urls: batch })
-              });
-              const result = await resp.json();
-              if (result.success && result.data) {
-                Object.assign(imgMap, result.data);
-              }
-            } catch(e) { console.error('Image batch error:', e); }
-          }
-          console.log('대시보드: 이미지', Object.keys(imgMap).length, '개 로드 완료');
-        }
-
-        // 3) PPT 생성
-        const pres = new PptxGenJS();
-        pres.layout = 'LAYOUT_16x9';
-        pres.title = 'SIO Dashboard';
-
-        const EATON_RED = 'D32F2F', EATON_DARK = '1A1A2E', WHITE = 'FFFFFF', LIGHT_BG = 'F5F6FA';
-        const GREEN = '43A047', ORANGE = 'FB8C00', BLUE = '1E88E5';
-        const TD = '1A1A2E', TG = '6B7280', TL = 'B0B0C0', BL = 'E5E7EB';
-        const DC = ['1E88E5','43A047','FB8C00','D32F2F','8E24AA','00ACC1','F4511E','3949AB'];
-
-        const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
-
-        const totalReceived = data.length;
-        const totalCompleted = completed.length;
-        const totalInProgress = inProgress.length;
-        const totalRejected = rejected.length;
-        const rate = totalReceived > 0 ? Math.round((totalCompleted / totalReceived) * 100) : 0;
-
-        // 이미지 삽입 헬퍼 (base64 또는 placeholder)
-        const addImg = (sl, url, x, y, w, h) => {
-          if (url && imgMap[url]) {
-            sl.addImage({ data: imgMap[url], x, y, w, h, sizing:{type:'cover',w,h} });
-          } else {
-            sl.addShape(pres.shapes.RECTANGLE, { x, y, w, h, fill:{color:'E0E0E0'} });
-            sl.addText('📷', { x, y, w, h, fontSize: w>0.6?16:10, align:'center', valign:'middle', color:'AAAAAA', margin:0 });
-          }
-        };
-
-        // Dept stats
-        const deptMap = {};
-        data.forEach(s => {
-          const d = s.actionDept || s.department || '미지정';
-          if (!deptMap[d]) deptMap[d] = { total: 0, completed: 0, inProgress: 0 };
-          deptMap[d].total++;
-          if (s.status === '조치완료') deptMap[d].completed++;
-          if (s.status === '조치중' || s.status === '진행중') deptMap[d].inProgress++;
-        });
-        const depts = Object.entries(deptMap).sort((a,b) => b[1].total - a[1].total);
-
-        // Helpers
-        const fmtDate = (d) => {
-          const p = parseDate(d);
-          return p ? `${(p.getMonth()+1).toString().padStart(2,'0')}/${p.getDate().toString().padStart(2,'0')}` : '';
-        };
-        const fmtDateFull = (d) => {
-          const p = parseDate(d);
-          return p ? `${p.getFullYear()}/${(p.getMonth()+1).toString().padStart(2,'0')}/${p.getDate().toString().padStart(2,'0')}` : '';
-        };
-        const daysOverdue = (td) => {
-          const t = parseDate(td);
-          if (!t) return 0;
-          const diff = Math.floor((new Date() - t) / 86400000);
-          return diff > 0 ? diff : 0;
-        };
-        const addHdr = (sl, title) => {
-          sl.addShape(pres.shapes.RECTANGLE, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: EATON_DARK } });
-          sl.addShape(pres.shapes.RECTANGLE, { x: 0, y: 0.7, w: 10, h: 0.04, fill: { color: EATON_RED } });
-          sl.addText(title, { x: 0.5, y: 0, w: 9, h: 0.7, fontSize: 20, fontFace: 'Arial', color: WHITE, bold: true, valign: 'middle', margin: 0 });
-          sl.addText(`${selectedYear}년 기준 | Updated: ${today}`, { x: 0.5, y: 0.74, w: 9, h: 0.28, fontSize: 9, fontFace: 'Arial', color: TG, margin: 0 });
-        };
-        const addFtr = (sl, p, t) => {
-          sl.addShape(pres.shapes.RECTANGLE, { x: 0, y: 5.35, w: 10, h: 0.28, fill: { color: EATON_DARK } });
-          sl.addText(`SIO Dashboard  |  ${p} / ${t}`, { x: 0.5, y: 5.35, w: 9, h: 0.28, fontSize: 8, fontFace: 'Arial', color: TL, valign: 'middle', margin: 0 });
-        };
-
-        const PER_PAGE = 8;
-        const ipPg = Math.max(1, Math.ceil(inProgress.length / PER_PAGE));
-        const compPg = Math.max(1, Math.ceil(completed.length / PER_PAGE));
-        const rejPg = rejected.length > 0 ? Math.ceil(rejected.length / PER_PAGE) : 0;
-        const totPg = 1 + ipPg + compPg + (rejPg || 0);
-
-        // ===== SLIDE 1: Overview =====
-        const s1 = pres.addSlide(); s1.background = { color: LIGHT_BG };
-        addHdr(s1, 'SIO Dashboard Overview'); addFtr(s1, 1, totPg);
-
-        const kpis = [
-          { l: '총 접수', v: String(totalReceived), u: '건', c: BLUE },
-          { l: '조치완료', v: String(totalCompleted), u: '건', c: GREEN },
-          { l: '진행중', v: String(totalInProgress), u: '건', c: ORANGE },
-          { l: '완료율', v: String(rate), u: '%', c: rate >= 80 ? GREEN : EATON_RED },
-        ];
-        kpis.forEach((k, i) => {
-          const cx = 0.5 + i * 2.3;
-          s1.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.15, w: 2.1, h: 1.1, fill: { color: WHITE }, shadow: { type: 'outer', blur: 4, offset: 1, angle: 135, color: '000000', opacity: 0.08 } });
-          s1.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.15, w: 0.06, h: 1.1, fill: { color: k.c } });
-          s1.addText(k.l, { x: cx+0.2, y: 1.25, w: 1.8, h: 0.3, fontSize: 11, fontFace: 'Arial', color: TG, margin: 0 });
-          s1.addText([
-            { text: k.v, options: { fontSize: 36, bold: true, color: k.c, fontFace: 'Arial Black' } },
-            { text: ' '+k.u, options: { fontSize: 14, color: TG, fontFace: 'Arial' } }
-          ], { x: cx+0.2, y: 1.5, w: 1.8, h: 0.65, valign: 'middle', margin: 0 });
-        });
-
-        // Dept chart
-        if (depts.length > 0) {
-          s1.addShape(pres.shapes.RECTANGLE, { x: 0.5, y: 2.45, w: 5.5, h: 2.7, fill: { color: WHITE }, shadow: { type: 'outer', blur: 4, offset: 1, angle: 135, color: '000000', opacity: 0.08 } });
-          s1.addText('부서별 접수 현황', { x: 0.7, y: 2.53, w: 5, h: 0.35, fontSize: 12, fontFace: 'Arial', bold: true, color: TD, margin: 0 });
-          s1.addChart(pres.charts.BAR, [{ name: '접수', labels: depts.map(d=>d[0]), values: depts.map(d=>d[1].total) }], {
-            x: 0.6, y: 2.85, w: 5.2, h: 2.2, barDir: 'col',
-            chartColors: DC.slice(0, depts.length), catAxisLabelColor: TG, catAxisLabelFontSize: 8,
-            valAxisLabelColor: TG, valAxisLabelFontSize: 8,
-            valGridLine: { color: 'E8E8E8', size: 0.5 }, catGridLine: { style: 'none' },
-            showLegend: false, showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: TD, dataLabelFontSize: 9, dataLabelFontBold: true, barGapWidthPct: 60,
-          });
-
-          // Dept table
-          const dx = 6.2;
-          s1.addShape(pres.shapes.RECTANGLE, { x: dx, y: 2.45, w: 3.3, h: 2.7, fill: { color: WHITE }, shadow: { type: 'outer', blur: 4, offset: 1, angle: 135, color: '000000', opacity: 0.08 } });
-          s1.addText('부서별 조치현황', { x: dx+0.2, y: 2.53, w: 3, h: 0.35, fontSize: 12, fontFace: 'Arial', bold: true, color: TD, margin: 0 });
-          const dh = ['부서','조치건수','완료','진행중'].map(t => ({ text: t, options: { fill:{color:EATON_DARK}, color:WHITE, bold:true, fontSize:8, fontFace:'Arial', align:'center' } }));
-          const drows = depts.map((d,i) => {
-            const bg = i%2===0 ? WHITE : 'F8F9FA';
-            const act = d[1].completed + d[1].inProgress;
-            return [
-              { text: d[0], options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', bold:true, align:'center', color:TD } },
-              { text: String(act), options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', bold:true, align:'center', color:TD } },
-              { text: String(d[1].completed), options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', align:'center', color:GREEN } },
-              { text: String(d[1].inProgress), options: { fill:{color:bg}, fontSize:8, fontFace:'Arial', align:'center', color:d[1].inProgress>0?ORANGE:TD } },
-            ];
-          });
-          s1.addTable([dh,...drows], { x:dx+0.1, y:2.9, w:3.1, colW:[0.85,0.7,0.7,0.7], border:{pt:0.5,color:BL}, rowH:0.25, autoPage:false });
-        }
-
-        // ===== IN-PROGRESS CARDS =====
-        let pn = 2;
-        for (let pg=0; pg<ipPg; pg++) {
-          const sl = pres.addSlide(); sl.background = { color: LIGHT_BG };
-          addHdr(sl, '진행중 SIO 목록'); addFtr(sl, pn++, totPg);
-          sl.addShape(pres.shapes.RECTANGLE, { x:0.5, y:1.05, w:1.3, h:0.28, fill:{color:ORANGE} });
-          sl.addText(`${inProgress.length}건 진행중`, { x:0.5, y:1.05, w:1.3, h:0.28, fontSize:10, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
-
-          const items = inProgress.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
-          items.forEach((item, i) => {
-            const col=i%4, row=Math.floor(i/4);
-            const cx=0.35+col*2.28, cy=1.5+row*1.98, cW=2.15, cH=1.85;
-            const od = daysOverdue(item.targetDate);
-            const bc = od>30?EATON_RED:od>0?ORANGE:BLUE;
-
-            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:cH, fill:{color:WHITE}, shadow:{type:'outer',blur:3,offset:1,angle:135,color:'000000',opacity:0.07} });
-            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:0.05, fill:{color:bc} });
-
-            // Photo
-            addImg(sl, item.photo, cx+0.08, cy+0.12, 0.75, 0.6);
-
-            const ix=cx+0.91, iw=cW-0.99;
-            const badge = od>0 ? ` +${od}일` : '';
-            sl.addText([
-              { text: '#'+(item.id||''), options: { fontSize:9, bold:true, color:TD, fontFace:'Arial' } },
-              ...(badge ? [{ text: badge, options: { fontSize:7, bold:true, color:bc, fontFace:'Arial' } }] : [])
-            ], { x:ix, y:cy+0.1, w:iw, h:0.2, margin:0 });
-            sl.addText(`${fmtDate(item.date)} | ${item.department||''}`, { x:ix, y:cy+0.28, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
-            sl.addText(`📍 ${item.location||''}`, { x:ix, y:cy+0.43, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
-            sl.addText(item.content||'', { x:cx+0.1, y:cy+0.78, w:cW-0.2, h:0.45, fontSize:8, fontFace:'Arial', color:TD, valign:'top', margin:0 });
-            sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.32, w:cW-0.16, h:0.01, fill:{color:BL} });
-            sl.addText([
-              { text:'조치: ', options:{fontSize:7,color:TG,fontFace:'Arial'} },
-              { text:item.actionDept||'-', options:{fontSize:7,bold:true,color:BLUE,fontFace:'Arial'} },
-              { text:`  Target: ${fmtDate(item.targetDate)}`, options:{fontSize:7,color:TG,fontFace:'Arial'} }
-            ], { x:cx+0.08, y:cy+cH-0.28, w:cW-0.16, h:0.22, margin:0, valign:'middle' });
-          });
-        }
-
-        // ===== COMPLETED CARDS (dual photo) =====
-        for (let pg=0; pg<compPg; pg++) {
-          const sl = pres.addSlide(); sl.background = { color: LIGHT_BG };
-          addHdr(sl, '조치완료 SIO 목록'); addFtr(sl, pn++, totPg);
-          sl.addShape(pres.shapes.RECTANGLE, { x:0.5, y:1.05, w:1.5, h:0.28, fill:{color:GREEN} });
-          sl.addText(`${completed.length}건 조치완료`, { x:0.5, y:1.05, w:1.5, h:0.28, fontSize:10, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
-
-          const items = completed.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
-          items.forEach((item, i) => {
-            const col=i%4, row=Math.floor(i/4);
-            const cx=0.35+col*2.28, cy=1.5+row*1.98, cW=2.15, cH=1.85;
-
-            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:cH, fill:{color:WHITE}, shadow:{type:'outer',blur:3,offset:1,angle:135,color:'000000',opacity:0.07} });
-            sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:0.05, fill:{color:GREEN} });
-
-            sl.addText([
-              { text: '#'+(item.id||''), options: { fontSize:9, bold:true, color:TD, fontFace:'Arial' } },
-              { text: `  ${fmtDate(item.date)} | ${item.department||''} | 📍${item.location||''}`, options: { fontSize:7, color:TG, fontFace:'Arial' } }
-            ], { x:cx+0.08, y:cy+0.08, w:cW-0.16, h:0.22, margin:0 });
-
-            const pw=0.88, ph=0.58, py=cy+0.32, p1x=cx+0.1, p2x=cx+cW-pw-0.1;
-
-            // Before photo
-            addImg(sl, item.photo, p1x, py, pw, ph);
-            sl.addShape(pres.shapes.RECTANGLE, { x:p1x, y:py+ph-0.14, w:pw, h:0.14, fill:{color:ORANGE} });
-            sl.addText('접수', { x:p1x, y:py+ph-0.14, w:pw, h:0.14, fontSize:7, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
-
-            sl.addText('→', { x:p1x+pw, y:py, w:p2x-p1x-pw, h:ph, fontSize:10, align:'center', valign:'middle', color:TG, margin:0 });
-
-            // After photo
-            addImg(sl, item.actionPhoto, p2x, py, pw, ph);
-            sl.addShape(pres.shapes.RECTANGLE, { x:p2x, y:py+ph-0.14, w:pw, h:0.14, fill:{color:GREEN} });
-            sl.addText('완료', { x:p2x, y:py+ph-0.14, w:pw, h:0.14, fontSize:7, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
-
-            sl.addText([
-              { text: item.content||'', options: { fontSize:7, color:TG, fontFace:'Arial', breakLine:true } },
-              { text: '→ '+(item.actionContent||''), options: { fontSize:7, bold:true, color:GREEN, fontFace:'Arial' } }
-            ], { x:cx+0.08, y:py+ph+0.04, w:cW-0.16, h:0.38, valign:'top', margin:0 });
-
-            sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.26, w:cW-0.16, h:0.01, fill:{color:BL} });
-            sl.addText(`완료일: ${fmtDate(item.closedDate)}`, { x:cx+0.08, y:cy+cH-0.22, w:cW-0.16, h:0.18, fontSize:7, fontFace:'Arial', bold:true, color:GREEN, margin:0, valign:'middle' });
-          });
-        }
-
-        // ===== REJECTED CARDS =====
-        if (rejected.length > 0) {
-          for (let pg=0; pg<rejPg; pg++) {
-            const sl = pres.addSlide(); sl.background = { color: LIGHT_BG };
-            addHdr(sl, '기각 SIO 목록'); addFtr(sl, pn++, totPg);
-            sl.addShape(pres.shapes.RECTANGLE, { x:0.5, y:1.05, w:1.1, h:0.28, fill:{color:'9E9E9E'} });
-            sl.addText(`${rejected.length}건 기각`, { x:0.5, y:1.05, w:1.1, h:0.28, fontSize:10, fontFace:'Arial', bold:true, color:WHITE, align:'center', valign:'middle', margin:0 });
-
-            const items = rejected.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
-            items.forEach((item, i) => {
-              const col=i%4, row=Math.floor(i/4);
-              const cx=0.35+col*2.28, cy=1.5+row*1.98, cW=2.15, cH=1.85;
-
-              sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:cH, fill:{color:WHITE}, shadow:{type:'outer',blur:3,offset:1,angle:135,color:'000000',opacity:0.07} });
-              sl.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:cW, h:0.05, fill:{color:'9E9E9E'} });
-
-              // Photo
-              addImg(sl, item.photo, cx+0.08, cy+0.12, 0.75, 0.6);
-
-              const ix=cx+0.91, iw=cW-0.99;
-              sl.addText('#'+(item.id||''), { x:ix, y:cy+0.1, w:iw, h:0.2, fontSize:9, bold:true, fontFace:'Arial', color:TD, margin:0 });
-              sl.addText(`${fmtDate(item.date)} | ${item.department||''}`, { x:ix, y:cy+0.28, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
-              sl.addText(`📍 ${item.location||''}`, { x:ix, y:cy+0.43, w:iw, h:0.16, fontSize:7, fontFace:'Arial', color:TG, margin:0 });
-              sl.addText(item.content||'', { x:cx+0.1, y:cy+0.78, w:cW-0.2, h:0.35, fontSize:8, fontFace:'Arial', color:TD, valign:'top', margin:0 });
-
-              sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.38, w:cW-0.16, h:0.01, fill:{color:BL} });
-              sl.addShape(pres.shapes.RECTANGLE, { x:cx+0.08, y:cy+cH-0.34, w:cW-0.16, h:0.28, fill:{color:'FFF5F5'} });
-              sl.addText([
-                { text:'기각: ', options:{fontSize:7,color:TG,fontFace:'Arial'} },
-                { text:item.remarks||item.actionContent||'', options:{fontSize:7,bold:true,color:EATON_RED,fontFace:'Arial'} }
-              ], { x:cx+0.12, y:cy+cH-0.34, w:cW-0.24, h:0.28, margin:0, valign:'middle' });
-            });
-          }
-        }
-
-        await pres.writeFile({ fileName: `SIO_Dashboard_${selectedYear}.pptx` });
-        } catch(err) { alert('대시보드 생성 중 오류가 발생했습니다.'); console.error(err); }
-        finally { setDashboardLoading(false); }
-      };
 
       // 1. 월별 부서별 접수 현황 (부서=행, 월=열)
       const getMonthlyDeptStats = () => {
@@ -1884,18 +1587,12 @@
 
           {/* 필터 - 연도만 */}
           <div className="bg-white rounded-xl shadow-md p-4">
-            <div className="flex gap-3 items-center justify-between">
-              <div className="flex gap-3 items-center">
-                <label className="text-sm text-gray-600">연도 선택</label>
-                <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="p-2 border border-gray-300 rounded-lg text-sm">
-                  {years.map(y => <option key={y} value={y}>{y}년</option>)}
-                </select>
-              </div>
-              <button onClick={generateDashboardPPT} disabled={dashboardLoading} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${dashboardLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'} text-white`}>
-                <Icon name={dashboardLoading ? "Loader" : "Monitor"} size={16} className={dashboardLoading ? "animate-spin" : ""} />
-                {dashboardLoading ? '생성중...' : '대시보드 PPT'}
-              </button>
+            <div className="flex gap-3 items-center">
+              <label className="text-sm text-gray-600">연도 선택</label>
+              <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="p-2 border border-gray-300 rounded-lg text-sm">
+                {years.map(y => <option key={y} value={y}>{y}년</option>)}
+              </select>
             </div>
           </div>
 
@@ -2121,7 +1818,7 @@
               <Icon name="Target" size={18} /> {selectedYear}년 월별 부서별 SIO 현황
             </h3>
             {(() => {
-              // 부서별 Target 가져오기
+              // 부서별 총인원 가져오기 (소수점 허용)
               const deptHeadcount = {};
               deptSettings.forEach(d => {
                 if (d.department && d.totalMembers) {
@@ -2129,18 +1826,18 @@
                 }
               });
               
-              // 등록된 부서 목록 (Target이 있는 부서만)
+              // 등록된 부서 목록 (총인원이 있는 부서만)
               const departments = Object.keys(deptHeadcount).filter(d => deptHeadcount[d] > 0);
               
-              // 전체 Target 합계
+              // 전체 총인원
               const totalHeadcount = departments.reduce((sum, d) => sum + deptHeadcount[d], 0);
               
-              // FY Target (연간목표) = 부서별 직접 입력값
+              // FY Target (연간목표) = 총인원 × 2 (3.5명이면 7건)
               const fyTargetByDept = {};
               departments.forEach(d => {
-                fyTargetByDept[d] = deptHeadcount[d];
+                fyTargetByDept[d] = deptHeadcount[d] * 2;
               });
-              const totalFyTarget = totalHeadcount;
+              const totalFyTarget = totalHeadcount * 2;
               
               // Month Target = FY Target / 12
               const monthTargetByDept = {};
@@ -2350,7 +2047,7 @@
                   </div>
                   
                   {departments.length === 0 && (
-                    <p className="text-gray-500 text-center py-8">부서설정에서 Target을 입력해주세요.</p>
+                    <p className="text-gray-500 text-center py-8">부서설정에서 총인원을 입력해주세요.</p>
                   )}
                 </div>
               );
@@ -2486,7 +2183,7 @@
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredSubmissions.slice().reverse().map((item) => (
+              {filteredSubmissions.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).map((item) => (
                 <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
                   <div className="flex justify-between items-start mb-3">
                     <div><span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>{item.status}</span></div>
@@ -2794,8 +2491,8 @@
           updates.closedDate = today;
         }
         
-        // 조치완료 외 상태로 변경 시 Closed Date 삭제
-        if (field === 'status' && value !== '조치완료') {
+        // 조치중으로 변경 시 Closed Date 삭제
+        if (field === 'status' && value === '조치중') {
           updates.closedDate = '';
         }
         
@@ -2986,7 +2683,7 @@
                 </tr></thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredSubmissions.length === 0 ? (<tr><td colSpan="17" className="px-3 py-8 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</td></tr>) : (
-                    filteredSubmissions.slice().reverse().map((item) => {
+                    filteredSubmissions.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).map((item) => {
                       const isEdited = editedData[item.id];
                       const formatDateForInput = (dateStr) => {
                         if (!dateStr) return '';
@@ -3344,7 +3041,7 @@
           
           {/* 카드 목록 */}
           <div className="space-y-3">
-            {filteredSubmissions.map(item => (
+            {filteredSubmissions.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).map(item => (
               <div key={item.id} className="bg-white rounded-xl shadow-md overflow-hidden">
                 {editingItem === item.id ? (
                   // 수정 모드
@@ -3560,8 +3257,15 @@
       const [sending, setSending] = React.useState(false);
       const [sendingReminder, setSendingReminder] = React.useState(false);
       const [showReminderSender, setShowReminderSender] = React.useState(false);
-      const [reminderSchedule, setReminderSchedule] = React.useState({ enabled: false, days: [] });
-      const [loadingSchedule, setLoadingSchedule] = React.useState(false);
+      
+      // 리마인드 자동 발송 설정
+      const [reminderDays, setReminderDays] = React.useState(() => {
+        const saved = localStorage.getItem('sio_reminder_days');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [reminderActive, setReminderActive] = React.useState(() => {
+        return localStorage.getItem('sio_reminder_active') === 'true';
+      });
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
@@ -3593,34 +3297,40 @@
 
       const addItem = (key) => {
         if (newItem[key].trim()) {
-          const updated = { ...settings, [key]: [...settings[key], newItem[key].trim()] };
-          setSettings(updated);
+          setSettings({ ...settings, [key]: [...settings[key], newItem[key].trim()] });
           setNewItem({ ...newItem, [key]: '' });
-          onSaveSettings(updated);
         }
       };
 
-      const removeItem = (key, index) => {
-        const updated = { ...settings, [key]: settings[key].filter((_, i) => i !== index) };
-        setSettings(updated);
-        onSaveSettings(updated);
-      };
+      const removeItem = (key, index) => setSettings({ ...settings, [key]: settings[key].filter((_, i) => i !== index) });
 
       const updateDeptSetting = (dept, field, value) => setLocalDeptSettings(localDeptSettings.map(s => s.department === dept ? { ...s, [field]: value } : s));
 
-      const saveDeptOnBlur = () => onSaveDeptSettings(localDeptSettings);
+      const saveSettings = async () => {
+        await onSaveDeptSettings(localDeptSettings);
+        await onSaveSettings(settings);
+        setAlertModal({ message: '설정이 저장되었습니다.', type: 'success' });
+      };
 
       const getUnsentItems = (dept) => submissions.filter(s => s.actionDept === dept && !s.emailSent);
       const totalUnsentCount = submissions.filter(s => s.actionDept && !s.emailSent).length;
+      
+      // 전체 미발송 목록 (부서 구분 없이)
       const allUnsentItems = submissions.filter(s => s.actionDept && !s.emailSent);
-      const unsentItemsForDept = selectedDept === '전체' ? allUnsentItems : selectedDept ? getUnsentItems(selectedDept) : [];
+      
+      // 초기 로드 시 전체 선택
+      React.useEffect(() => {
+        if (showEmailSender && allUnsentItems.length > 0 && selectedItems.length === 0) {
+          setSelectedItems(allUnsentItems.map(i => i.id));
+        }
+      }, [showEmailSender, allUnsentItems.length]);
 
       const toggleItem = (id) => {
         setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
       };
 
       const toggleAll = () => {
-        setSelectedItems(selectedItems.length === unsentItemsForDept.length ? [] : unsentItemsForDept.map(i => i.id));
+        setSelectedItems(selectedItems.length === allUnsentItems.length ? [] : allUnsentItems.map(i => i.id));
       };
 
       const sendSelectedEmails = async () => {
@@ -3653,7 +3363,60 @@
       
       const totalPendingCount = (settings.departments || []).reduce((sum, dept) => sum + getPendingByDept(dept).length, 0);
 
-      // 리마인드 메일 발송
+      // 리마인드 요일 토글
+      const toggleReminderDay = (day) => {
+        const newDays = reminderDays.includes(day) 
+          ? reminderDays.filter(d => d !== day) 
+          : [...reminderDays, day];
+        setReminderDays(newDays);
+        localStorage.setItem('sio_reminder_days', JSON.stringify(newDays));
+      };
+      
+      // 리마인드 자동 발송 시작/중지
+      const toggleReminderActive = async () => {
+        const newActive = !reminderActive;
+        setReminderActive(newActive);
+        localStorage.setItem('sio_reminder_active', String(newActive));
+        
+        // Apps Script에 설정 저장
+        try {
+          await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ 
+              action: 'saveReminderSettings', 
+              days: reminderDays,
+              active: newActive 
+            })
+          });
+          setAlertModal({ 
+            message: newActive ? '리마인드 자동 발송이 시작되었습니다.' : '리마인드 자동 발송이 중지되었습니다.', 
+            type: 'success' 
+          });
+        } catch (e) {
+          setAlertModal({ message: '설정 저장 실패: ' + e.message, type: 'error' });
+        }
+      };
+      
+      // 리마인드 설정 저장
+      const saveReminderSettings = async () => {
+        try {
+          await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ 
+              action: 'saveReminderSettings', 
+              days: reminderDays,
+              active: reminderActive 
+            })
+          });
+          setAlertModal({ message: '리마인드 설정이 저장되었습니다.', type: 'success' });
+        } catch (e) {
+          setAlertModal({ message: '설정 저장 실패: ' + e.message, type: 'error' });
+        }
+      };
+
+      // 리마인드 메일 수동 발송
       const sendReminderEmails = async () => {
         setSendingReminder(true);
         try {
@@ -3674,54 +3437,6 @@
         setSendingReminder(false);
       };
 
-      // 리마인드 스케줄 불러오기
-      React.useEffect(() => {
-        const loadSchedule = async () => {
-          try {
-            const response = await fetch(API_URL + '?type=reminderSchedule');
-            const result = await response.json();
-            if (result.success && result.data) {
-              setReminderSchedule({
-                enabled: result.data.enabled === 'true' || result.data.enabled === true,
-                days: result.data.days || [],
-              });
-            }
-          } catch (e) { console.error('스케줄 로드 실패:', e); }
-        };
-        loadSchedule();
-      }, []);
-
-      const saveReminderSchedule = async (newSchedule) => {
-        setLoadingSchedule(true);
-        try {
-          const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'saveReminderSchedule', schedule: newSchedule })
-          });
-          const result = await response.json();
-          if (result.success) {
-            setReminderSchedule(newSchedule);
-            setAlertModal({ 
-              message: newSchedule.enabled ? '리마인드 자동발송이 시작되었습니다.' : '리마인드 자동발송이 중지되었습니다.', 
-              type: 'success' 
-            });
-          } else {
-            setAlertModal({ message: result.error || '설정 저장 실패', type: 'error' });
-          }
-        } catch (e) {
-          setAlertModal({ message: '네트워크 오류: ' + e.message, type: 'error' });
-        }
-        setLoadingSchedule(false);
-      };
-
-      const toggleReminderDay = (dayNum) => {
-        setReminderSchedule(prev => ({
-          ...prev,
-          days: prev.days.includes(dayNum) ? prev.days.filter(d => d !== dayNum) : [...prev.days, dayNum].sort((a,b) => a-b)
-        }));
-      };
-
       const sections = [
         { key: 'departments', label: '부서 (접수/조치 공용)' },
         { key: 'categories', label: '구분' },
@@ -3732,7 +3447,7 @@
         <div className="space-y-6">
           <h2 className="text-lg font-bold text-gray-800">설정</h2>
 
-          {/* 부서 설정 (이메일/비밀번호/Target/참조) */}
+          {/* 부서 설정 (이메일/비밀번호/총인원/참조) */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 부서별 설정</h3>
             <div className="space-y-3">
@@ -3745,26 +3460,26 @@
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
                     <div className="flex items-center gap-2">
                       <Icon name="Mail" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="email" value={item.email} onChange={(e) => updateDeptSetting(item.department, 'email', e.target.value)} onBlur={saveDeptOnBlur}
+                      <input type="email" value={item.email} onChange={(e) => updateDeptSetting(item.department, 'email', e.target.value)}
                         className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="이메일" />
                     </div>
                     <div className="flex items-center gap-2">
                       <Icon name="Lock" size={14} className="text-gray-400 flex-shrink-0" />
                       <div className="flex-1 relative">
-                        <input type={showPasswords[item.department] ? 'text' : 'password'} value={item.password} onChange={(e) => updateDeptSetting(item.department, 'password', e.target.value)} onBlur={saveDeptOnBlur}
+                        <input type={showPasswords[item.department] ? 'text' : 'password'} value={item.password} onChange={(e) => updateDeptSetting(item.department, 'password', e.target.value)}
                           className="w-full p-2 border border-gray-300 rounded-lg text-sm pr-8" placeholder="비밀번호" />
                         <button type="button" onClick={() => setShowPasswords({ ...showPasswords, [item.department]: !showPasswords[item.department] })}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"><Icon name={showPasswords[item.department] ? 'EyeOff' : 'Eye'} size={16} /></button>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Icon name="Target" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="number" step="1" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)} onBlur={saveDeptOnBlur}
-                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="Target (연간 목표 건수)" />
+                      <Icon name="Users" size={14} className="text-gray-400 flex-shrink-0" />
+                      <input type="number" step="0.5" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원 (예: 3.5)" />
                     </div>
                     <div className="flex items-center gap-2 lg:col-span-2">
                       <Icon name="Copy" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="email" value={item.ccEmail || ''} onChange={(e) => updateDeptSetting(item.department, 'ccEmail', e.target.value)} onBlur={saveDeptOnBlur}
+                      <input type="email" value={item.ccEmail || ''} onChange={(e) => updateDeptSetting(item.department, 'ccEmail', e.target.value)}
                         className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="참조(CC) 이메일" />
                     </div>
                   </div>
@@ -3787,158 +3502,159 @@
 
             {showEmailSender && (
               <div className="space-y-4 border-t pt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-2">조치부서 선택</label>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => { setSelectedDept('전체'); setSelectedItems([]); }}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedDept === '전체' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>
-                      전체 {totalUnsentCount > 0 && <span className="ml-1 bg-orange-500 text-white rounded-full px-1.5 text-xs">{totalUnsentCount}</span>}
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-gray-700">미발송 목록 ({allUnsentItems.length}건)</span>
+                  {allUnsentItems.length > 0 && (
+                    <button onClick={toggleAll} className="text-sm text-blue-600 hover:underline">
+                      {selectedItems.length === allUnsentItems.length ? '전체 해제' : '전체 선택'}
                     </button>
-                    {settings.departments.map((dept, idx) => {
-                      const count = getUnsentItems(dept).length;
-                      return (
-                        <button key={idx} onClick={() => { setSelectedDept(dept); setSelectedItems([]); }}
-                          className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedDept === dept ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>
-                          {dept} {count > 0 && <span className="ml-1 bg-orange-500 text-white rounded-full px-1.5 text-xs">{count}</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  )}
                 </div>
-
-                {selectedDept && (
-                  <div className="border border-gray-200 rounded-lg p-3">
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="font-medium text-gray-700">{selectedDept === '전체' ? '전체' : selectedDept} 미발송 목록 ({unsentItemsForDept.length}건)</span>
-                      {unsentItemsForDept.length > 0 && (
-                        <button onClick={toggleAll} className="text-sm text-blue-600">{selectedItems.length === unsentItemsForDept.length ? '전체 해제' : '전체 선택'}</button>
-                      )}
+                
+                {allUnsentItems.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">미발송 항목이 없습니다.</p>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="max-h-80 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-100 sticky top-0">
+                          <tr>
+                            <th className="py-2 px-3 text-left w-10">
+                              <input type="checkbox" checked={selectedItems.length === allUnsentItems.length && allUnsentItems.length > 0} onChange={toggleAll} className="w-4 h-4" />
+                            </th>
+                            <th className="py-2 px-3 text-left font-medium text-gray-700">부서</th>
+                            <th className="py-2 px-3 text-left font-medium text-gray-700">접수일</th>
+                            <th className="py-2 px-3 text-left font-medium text-gray-700">장소</th>
+                            <th className="py-2 px-3 text-left font-medium text-gray-700">내용</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allUnsentItems.map(item => (
+                            <tr key={item.id} className={`border-t hover:bg-gray-50 cursor-pointer ${selectedItems.includes(item.id) ? 'bg-blue-50' : ''}`} onClick={() => toggleItem(item.id)}>
+                              <td className="py-2 px-3">
+                                <input type="checkbox" checked={selectedItems.includes(item.id)} onChange={() => toggleItem(item.id)} onClick={(e) => e.stopPropagation()} className="w-4 h-4" />
+                              </td>
+                              <td className="py-2 px-3 font-medium text-blue-600">{item.actionDept}</td>
+                              <td className="py-2 px-3 text-gray-600">{formatDate(item.date)}</td>
+                              <td className="py-2 px-3 text-gray-600">{item.location}</td>
+                              <td className="py-2 px-3 text-gray-800">{String(item.content || '').slice(0, 40)}{String(item.content || '').length > 40 ? '...' : ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                    {unsentItemsForDept.length === 0 ? (
-                      <p className="text-gray-500 text-sm text-center py-4">미발송 항목이 없습니다.</p>
-                    ) : (
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {unsentItemsForDept.map(item => (
-                          <label key={item.id} className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer ${selectedItems.includes(item.id) ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
-                            <input type="checkbox" checked={selectedItems.includes(item.id)} onChange={() => toggleItem(item.id)} className="mt-1 w-4 h-4" />
-                            <div className="flex-1 text-sm">
-                              <div className="text-gray-600">{formatDate(item.date)} | {selectedDept === '전체' && <span className="text-blue-600 font-medium">[{item.actionDept}] </span>}{item.location}</div>
-                              <div className="text-gray-800">{item.content}</div>
-                              {item.request && <div className="text-yellow-600 text-xs">요청: {item.request}</div>}
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                    {unsentItemsForDept.length > 0 && (
-                      <button onClick={sendSelectedEmails} disabled={sending || selectedItems.length === 0}
-                        className="w-full mt-3 py-2 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2">
-                        {sending ? <><Icon name="Loader" size={16} className="spinner" /> 발송 중...</> : <><Icon name="Send" size={16} /> 선택 항목 메일 발송 ({selectedItems.length}건)</>}
-                      </button>
-                    )}
                   </div>
+                )}
+                
+                {allUnsentItems.length > 0 && (
+                  <button onClick={sendSelectedEmails} disabled={sending || selectedItems.length === 0}
+                    className="w-full py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-orange-600">
+                    {sending ? <><Icon name="Loader" size={16} className="spinner" /> 발송 중...</> : <><Icon name="Send" size={16} /> 선택 항목 메일 발송 ({selectedItems.length}건)</>}
+                  </button>
                 )}
               </div>
             )}
           </div>
 
-          {/* 리마인드 메일 자동발송 */}
+          {/* 리마인드 메일 자동 발송 */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                <Icon name="Bell" size={20} /> 리마인드 메일 자동발송
+                <Icon name="Bell" size={20} /> 리마인드 메일 (자동 발송)
+                {reminderActive && <span className="bg-green-500 text-white text-xs rounded-full px-2 py-0.5">실행중</span>}
                 {totalPendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">기한초과 {totalPendingCount}건</span>}
               </h3>
-              {reminderSchedule.enabled ? (
-                <span className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> 발송중
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full"></span> 중지됨
-                </span>
-              )}
+              <button onClick={() => setShowReminderSender(!showReminderSender)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${showReminderSender ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                <Icon name="Settings" size={16} /> {showReminderSender ? '닫기' : '설정'}
+              </button>
             </div>
 
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">Target Date가 지난 SIO에 대해 선택한 요일마다 자동으로 리마인드 메일을 발송합니다.</p>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">발송 요일 선택</label>
-                <div className="flex flex-wrap gap-2">
-                  {[{num:1,label:'월'},{num:2,label:'화'},{num:3,label:'수'},{num:4,label:'목'},{num:5,label:'금'},{num:6,label:'토'},{num:0,label:'일'}].map(day => (
-                    <button key={day.num} onClick={() => toggleReminderDay(day.num)}
-                      disabled={reminderSchedule.enabled}
-                      className={`w-12 h-12 rounded-lg text-sm font-bold border-2 transition-all ${
-                        reminderSchedule.days.includes(day.num) ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-500 border-gray-300 hover:border-red-300'
-                      } ${reminderSchedule.enabled ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                      {day.label}
-                    </button>
-                  ))}
-                </div>
-                {reminderSchedule.days.length > 0 && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    매주 {reminderSchedule.days.sort((a,b)=>a-b).map(d => ['일','월','화','수','목','금','토'][d]+'요일').join(', ')}에 자동 발송
+            {showReminderSender && (
+              <div className="space-y-4 border-t pt-4">
+                {/* 자동 발송 설정 */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm font-medium text-gray-700 mb-3">자동 발송 요일 선택</p>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {['월', '화', '수', '목', '금', '토', '일'].map((day, idx) => (
+                      <button key={day} onClick={() => toggleReminderDay(idx + 1)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                          reminderDays.includes(idx + 1) 
+                            ? 'bg-blue-600 text-white border-blue-600' 
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                        }`}>
+                        {day}요일
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mb-4">
+                    선택한 요일에 Target Date가 지난 항목에 대해 자동으로 리마인드 메일이 발송됩니다.
                   </p>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                {!reminderSchedule.enabled ? (
-                  <button onClick={() => {
-                      if (reminderSchedule.days.length === 0) { setAlertModal({ message: '발송 요일을 1개 이상 선택해주세요.', type: 'error' }); return; }
-                      saveReminderSchedule({ ...reminderSchedule, enabled: true });
-                    }}
-                    disabled={loadingSchedule || reminderSchedule.days.length === 0}
-                    className="flex-1 py-3 bg-green-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-green-600">
-                    {loadingSchedule ? <><Icon name="Loader" size={16} className="spinner" /> 처리 중...</> : <><Icon name="Play" size={16} /> 발송 시작</>}
-                  </button>
-                ) : (
-                  <button onClick={() => saveReminderSchedule({ ...reminderSchedule, enabled: false })}
-                    disabled={loadingSchedule}
-                    className="flex-1 py-3 bg-red-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-600">
-                    {loadingSchedule ? <><Icon name="Loader" size={16} className="spinner" /> 처리 중...</> : <><Icon name="Square" size={16} /> 발송 중지</>}
-                  </button>
-                )}
-                <button onClick={sendReminderEmails} disabled={sendingReminder || totalPendingCount === 0}
-                  className="py-3 px-4 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-orange-600">
-                  {sendingReminder ? <Icon name="Loader" size={16} className="spinner" /> : <><Icon name="Send" size={16} /> 즉시발송</>}
-                </button>
-              </div>
-
-              {totalPendingCount > 0 && (
-                <div className="space-y-2 border-t pt-3">
-                  <p className="text-sm font-medium text-gray-700">기한초과 현황</p>
+                  
+                  <div className="flex gap-2">
+                    <button onClick={toggleReminderActive} disabled={reminderDays.length === 0}
+                      className={`flex-1 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${
+                        reminderActive 
+                          ? 'bg-red-500 text-white hover:bg-red-600' 
+                          : 'bg-green-500 text-white hover:bg-green-600 disabled:opacity-50'
+                      }`}>
+                      <Icon name={reminderActive ? 'Pause' : 'Play'} size={16} />
+                      {reminderActive ? '자동 발송 중지' : '자동 발송 시작'}
+                    </button>
+                    <button onClick={sendReminderEmails} disabled={sendingReminder || totalPendingCount === 0}
+                      className="px-4 py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-orange-600">
+                      {sendingReminder ? <Icon name="Loader" size={16} className="spinner" /> : <Icon name="Send" size={16} />}
+                      수동 발송
+                    </button>
+                  </div>
+                </div>
+                
+                <p className="text-sm text-gray-600">Target Date가 지난 SIO에 대해 각 부서별로 리마인드 메일을 발송합니다.</p>
+                
+                {/* 부서별 기한초과 현황 */}
+                <div className="space-y-2">
                   {(settings.departments || []).map((dept, idx) => {
                     const pendingItems = getPendingByDept(dept);
+                    const deptEmail = deptSettings.find(d => d.department === dept)?.email;
                     if (pendingItems.length === 0) return null;
                     return (
                       <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-3">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-medium text-red-800 text-sm">{dept}</span>
-                          <span className="text-xs text-red-600">{pendingItems.length}건</span>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium text-red-800">{dept}</span>
+                          <span className="text-sm text-red-600">{pendingItems.length}건 기한초과</span>
                         </div>
-                        <div className="mt-1 max-h-24 overflow-y-auto space-y-1">
-                          {pendingItems.slice(0, 3).map(item => (
+                        {deptEmail ? (
+                          <p className="text-xs text-gray-500">발송 대상: {deptEmail}</p>
+                        ) : (
+                          <p className="text-xs text-orange-600">⚠️ 이메일 미설정</p>
+                        )}
+                        <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
+                          {pendingItems.slice(0, 5).map(item => (
                             <div key={item.id} className="text-xs text-gray-600 bg-white rounded px-2 py-1">
                               {formatDate(item.date)} - {String(item.content || '').slice(0, 30)}{String(item.content || '').length > 30 ? '...' : ''}
                             </div>
                           ))}
-                          {pendingItems.length > 3 && <div className="text-xs text-gray-400 text-center">...외 {pendingItems.length - 3}건</div>}
+                          {pendingItems.length > 5 && (
+                            <div className="text-xs text-gray-400 text-center">...외 {pendingItems.length - 5}건</div>
+                          )}
                         </div>
                       </div>
                     );
                   })}
+                  {totalPendingCount === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      <Icon name="CheckCircle" size={32} className="mx-auto text-green-400 mb-2" />
+                      기한초과 항목이 없습니다.
+                    </div>
+                  )}
                 </div>
-              )}
-              {totalPendingCount === 0 && (
-                <div className="text-center py-3 text-gray-500 border-t">
-                  <Icon name="CheckCircle" size={28} className="mx-auto text-green-400 mb-1" />
-                  <p className="text-sm">기한초과 항목이 없습니다.</p>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
+
+          {/* 저장 버튼 */}
+          <button onClick={saveSettings} className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
+            <Icon name="Save" size={18} /> 설정 저장
+          </button>
 
           {/* 목록 관리 */}
           {sections.map(({ key, label }) => (
