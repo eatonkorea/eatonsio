@@ -2419,6 +2419,60 @@
       // 수정된 데이터 추적
       const [editedData, setEditedData] = React.useState({});
       const [attachmentFiles, setAttachmentFiles] = React.useState({});
+      
+      // 현재 편집 중인 행 ID
+      const [activeRowId, setActiveRowId] = React.useState(null);
+      
+      // 특정 행만 저장하는 함수
+      const saveRow = async (itemId) => {
+        if (!editedData[itemId]) return;
+        setSaving(true);
+        try {
+          const updateData = { ...editedData[itemId] };
+          delete updateData._hasAttachment;
+          if (attachmentFiles[itemId]) {
+            updateData.attachment = attachmentFiles[itemId].data;
+          }
+          await onUpdate(itemId, updateData);
+          setEditedData(prev => {
+            const newData = { ...prev };
+            delete newData[itemId];
+            return newData;
+          });
+          setAttachmentFiles(prev => {
+            const newFiles = { ...prev };
+            delete newFiles[itemId];
+            return newFiles;
+          });
+          await onRefresh();
+        } catch (err) {
+          alert('저장에 실패했습니다.');
+        }
+        setSaving(false);
+      };
+      
+      // 행 포커스 변경 시 이전 행 자동 저장
+      const handleRowFocus = (itemId) => {
+        if (activeRowId && activeRowId !== itemId && editedData[activeRowId]) {
+          saveRow(activeRowId);
+        }
+        setActiveRowId(itemId);
+      };
+      
+      // 테이블 외부 클릭 시 자동 저장
+      const tableRef = React.useRef(null);
+      React.useEffect(() => {
+        const handleClickOutside = (e) => {
+          if (tableRef.current && !tableRef.current.contains(e.target)) {
+            if (activeRowId && editedData[activeRowId]) {
+              saveRow(activeRowId);
+              setActiveRowId(null);
+            }
+          }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, [activeRowId, editedData]);
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
@@ -2528,15 +2582,6 @@
         }
       };
 
-      // 변경사항 개수
-      const changedCount = Object.keys(editedData).length;
-
-      // 변경사항 초기화
-      const handleCancel = () => {
-        setEditedData({});
-        setAttachmentFiles({});
-      };
-
       // 사진 재첨부 (압축 포함)
       const compressImage = (file, maxSize = 1280, quality = 0.85) => {
         return new Promise((resolve) => {
@@ -2576,28 +2621,6 @@
         }
       };
 
-      // 일괄 저장
-      const handleApply = async () => {
-        if (changedCount === 0) return;
-        setSaving(true);
-        try {
-          for (const [itemId, changes] of Object.entries(editedData)) {
-            const updateData = { ...changes };
-            delete updateData._hasAttachment;
-            if (attachmentFiles[itemId]) {
-              updateData.attachment = attachmentFiles[itemId].data;
-            }
-            await onUpdate(itemId, updateData);
-          }
-          setEditedData({});
-          setAttachmentFiles({});
-          await onRefresh();
-        } catch (err) {
-          alert('저장에 실패했습니다.');
-        }
-        setSaving(false);
-      };
-
       const filteredSubmissions = submissions.filter(item => {
         if (filters.department && item.department !== filters.department) return false;
         if (filters.category && item.category !== filters.category) return false;
@@ -2625,14 +2648,11 @@
             </div>
           </div>
 
-          {/* 변경사항 알림 바 */}
-          {changedCount > 0 && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex justify-between items-center sticky top-0 z-10">
-              <span className="text-orange-700 font-medium"><Icon name="AlertCircle" size={16} className="inline mr-2" />{changedCount}건의 변경사항이 있습니다</span>
-              <div className="flex gap-2">
-                <button onClick={handleCancel} className="px-4 py-1.5 text-gray-600 border border-gray-300 rounded-lg text-sm">취소</button>
-                <button onClick={handleApply} disabled={saving} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">{saving ? '저장 중...' : '적용'}</button>
-              </div>
+          {/* 저장 중 표시 */}
+          {saving && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-center sticky top-0 z-10">
+              <Icon name="Loader" size={16} className="spinner mr-2 text-blue-600" />
+              <span className="text-blue-700 font-medium">저장 중...</span>
             </div>
           )}
           
@@ -2650,7 +2670,7 @@
           )}
 
           {/* 테이블 */}
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="bg-white rounded-xl shadow-md overflow-hidden" ref={tableRef}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[3000px]">
                 <thead className="bg-gray-50 border-b"><tr>
@@ -2695,7 +2715,7 @@
                         return '';
                       };
                       return (
-                        <tr key={item.id} className={isEdited ? 'bg-orange-50' : 'hover:bg-gray-50'}>
+                        <tr key={item.id} className={isEdited ? 'bg-orange-50' : (activeRowId === item.id ? 'bg-blue-50' : 'hover:bg-gray-50')} onClick={() => handleRowFocus(item.id)}>
                           <td className="px-2 py-2"><input type="date" value={getValue(item.id, 'date', formatDateForInput(item.date))} onChange={(e) => handleFieldChange(item.id, 'date', e.target.value)} className="w-28 p-1 border rounded text-xs" /></td>
                           <td className="px-2 py-2"><input type="text" value={getValue(item.id, 'name', item.name)} onChange={(e) => handleFieldChange(item.id, 'name', e.target.value)} className="w-16 p-1 border rounded text-xs" /></td>
                           <td className="px-2 py-2"><select value={getValue(item.id, 'department', item.department)} onChange={(e) => handleFieldChange(item.id, 'department', e.target.value)} className="w-20 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
@@ -2878,6 +2898,34 @@
       const [photoPreview, setPhotoPreview] = React.useState(null);
       const [photoPreview2, setPhotoPreview2] = React.useState(null);
       
+      // 외부 클릭 시 자동 저장
+      const cardRef = React.useRef(null);
+      
+      const saveAndClose = async (id) => {
+        if (!editingItem || saving) return;
+        setSaving(true);
+        const { photoChanged, photo2Changed, ...saveData } = editData;
+        await onUpdate(id, saveData);
+        setSaving(false);
+        setEditingItem(null);
+        setEditData({});
+        setPhotoPreview(null);
+        setPhotoPreview2(null);
+      };
+      
+      React.useEffect(() => {
+        const handleClickOutside = (e) => {
+          // 수정 중이고, 카드 목록 외부를 클릭한 경우
+          if (editingItem && cardRef.current && !cardRef.current.contains(e.target)) {
+            // 사진 모달이 열려있으면 저장하지 않음
+            if (selectedPhoto) return;
+            saveAndClose(editingItem);
+          }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, [editingItem, editData, saving, selectedPhoto]);
+      
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const str = String(dateStr);
@@ -3040,7 +3088,7 @@
           </div>
           
           {/* 카드 목록 */}
-          <div className="space-y-3">
+          <div className="space-y-3" ref={cardRef}>
             {filteredSubmissions.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).map(item => (
               <div key={item.id} className="bg-white rounded-xl shadow-md overflow-hidden">
                 {editingItem === item.id ? (
@@ -3295,21 +3343,33 @@
         })));
       }, [deptSettings, settings.departments]);
 
-      const addItem = (key) => {
+      // 항목 추가 (즉시 저장)
+      const addItem = async (key) => {
         if (newItem[key].trim()) {
-          setSettings({ ...settings, [key]: [...settings[key], newItem[key].trim()] });
+          const newSettings = { ...settings, [key]: [...settings[key], newItem[key].trim()] };
+          setSettings(newSettings);
           setNewItem({ ...newItem, [key]: '' });
+          await onSaveSettings(newSettings);
         }
       };
 
-      const removeItem = (key, index) => setSettings({ ...settings, [key]: settings[key].filter((_, i) => i !== index) });
+      // 항목 삭제 (즉시 저장)
+      const removeItem = async (key, index) => {
+        const newSettings = { ...settings, [key]: settings[key].filter((_, i) => i !== index) };
+        setSettings(newSettings);
+        await onSaveSettings(newSettings);
+      };
 
-      const updateDeptSetting = (dept, field, value) => setLocalDeptSettings(localDeptSettings.map(s => s.department === dept ? { ...s, [field]: value } : s));
-
-      const saveSettings = async () => {
-        await onSaveDeptSettings(localDeptSettings);
-        await onSaveSettings(settings);
-        setAlertModal({ message: '설정이 저장되었습니다.', type: 'success' });
+      // 부서 설정 변경 (디바운싱으로 즉시 저장)
+      const updateDeptSetting = (dept, field, value) => {
+        const newLocalDeptSettings = localDeptSettings.map(s => s.department === dept ? { ...s, [field]: value } : s);
+        setLocalDeptSettings(newLocalDeptSettings);
+        
+        // 디바운싱: 입력 멈추고 500ms 후 저장
+        if (window.deptSettingTimer) clearTimeout(window.deptSettingTimer);
+        window.deptSettingTimer = setTimeout(async () => {
+          await onSaveDeptSettings(newLocalDeptSettings);
+        }, 500);
       };
 
       const getUnsentItems = (dept) => submissions.filter(s => s.actionDept === dept && !s.emailSent);
@@ -3650,11 +3710,6 @@
               </div>
             )}
           </div>
-
-          {/* 저장 버튼 */}
-          <button onClick={saveSettings} className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
-            <Icon name="Save" size={18} /> 설정 저장
-          </button>
 
           {/* 목록 관리 */}
           {sections.map(({ key, label }) => (
