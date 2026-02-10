@@ -26,6 +26,7 @@
   
   <script type="text/babel">
     const API_URL = 'https://script.google.com/macros/s/AKfycbyR-2pwkX384ixyF_J8LbnFQGTiH_maLcZ_jib35OfCwxMaXVhTWRg1vUW7EOeSsFIprA/exec';
+    window.__SIO_API_URL = API_URL;
 
     const convertDriveUrl = (url) => {
       if (!url) return '';
@@ -1571,8 +1572,18 @@
         XLSX.writeFile(wb, `SIO_보고서_${selectedYear}년.xlsx`);
       };
 
-      const exportToPPT = () => {
-        window.generateSIOPPT(filteredByYear, parseDate, selectedYear);
+      const [pptLoading, setPptLoading] = React.useState(false);
+      const [pptStatus, setPptStatus] = React.useState('');
+      const exportToPPT = async () => {
+        setPptLoading(true);
+        setPptStatus('준비중...');
+        try {
+          await window.generateSIOPPT(filteredByYear, parseDate, selectedYear, setPptStatus);
+        } catch(e) {
+          alert('PPT 생성 중 오류: ' + e.message);
+        }
+        setPptLoading(false);
+        setPptStatus('');
       };
 
       return (
@@ -1580,7 +1591,7 @@
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-bold text-gray-800">보고서</h2>
             <div className="flex gap-2">
-              <button onClick={exportToPPT} className="flex items-center gap-1 text-orange-600 p-2 hover:bg-orange-50 rounded-lg text-sm"><Icon name="Presentation" size={18} /><span>PPT</span></button>
+              <button onClick={exportToPPT} disabled={pptLoading} className="flex items-center gap-1 text-orange-600 p-2 hover:bg-orange-50 rounded-lg text-sm disabled:opacity-50"><Icon name={pptLoading ? "Loader" : "Presentation"} size={18} className={pptLoading ? "spinner" : ""} /><span>{pptLoading ? (pptStatus || '생성중...') : 'PPT'}</span></button>
               <button onClick={exportToExcel} className="flex items-center gap-1 text-green-600 p-2 hover:bg-green-50 rounded-lg text-sm">
                 <Icon name="Download" size={18} />
                 <span>내보내기</span>
@@ -3583,7 +3594,96 @@
 
   <script>
     // PPT Export Function (outside Babel)
-    window.generateSIOPPT = function(filteredByYear, parseDate, selectedYear) {
+    window.generateSIOPPT = async function(filteredByYear, parseDate, selectedYear, setStatus) {
+      var API_URL = window.__SIO_API_URL || '';
+      var log = function(msg) { if (setStatus) setStatus(msg); console.log('[PPT] ' + msg); };
+
+      // ---- 브라우저에서 직접 이미지 로드 (가장 빠름) ----
+      function driveUrlToThumbnail(url) {
+        if (!url) return null;
+        var match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (!match) match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) return 'https://lh3.googleusercontent.com/d/' + match[1] + '=s800';
+        return null;
+      }
+
+      function loadImageAsBase64(url) {
+        return new Promise(function(resolve) {
+          var thumbUrl = driveUrlToThumbnail(url);
+          if (!thumbUrl) { resolve(null); return; }
+          var done = false;
+          var img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function() {
+            if (done) return; done = true;
+            try {
+              var canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              canvas.getContext('2d').drawImage(img, 0, 0);
+              resolve(canvas.toDataURL('image/jpeg', 0.85));
+            } catch(e) { resolve(null); }
+          };
+          img.onerror = function() { if (!done) { done = true; resolve(null); } };
+          setTimeout(function() { if (!done) { done = true; resolve(null); } }, 8000);
+          img.src = thumbUrl;
+        });
+      }
+
+      async function fetchImagesAsBase64(urls) {
+        var uniqueUrls = urls.filter(function(u, i, a) { return u && u.includes('drive.google.com') && a.indexOf(u) === i; });
+        if (uniqueUrls.length === 0) return {};
+        
+        log('사진 ' + uniqueUrls.length + '장 로딩중...');
+        var imageMap = {};
+        var loaded = 0;
+        
+        // 모든 이미지를 병렬로 동시 로드 (브라우저가 커넥션 관리)
+        var promises = uniqueUrls.map(function(url) {
+          return loadImageAsBase64(url).then(function(data) {
+            loaded++;
+            if (loaded % 5 === 0 || loaded === uniqueUrls.length) {
+              log('사진 로딩... (' + loaded + '/' + uniqueUrls.length + ')');
+            }
+            if (data) imageMap[url] = data;
+          });
+        });
+        await Promise.all(promises);
+        
+        // 실패한 이미지는 Apps Script 프록시로 재시도
+        var failedUrls = uniqueUrls.filter(function(u) { return !imageMap[u]; });
+        if (failedUrls.length > 0 && API_URL) {
+          log('재시도... (' + failedUrls.length + '장)');
+          try {
+            var joined = failedUrls.map(function(u) { return u.trim(); }).join('|||');
+            var controller = new AbortController();
+            var timer = setTimeout(function() { controller.abort(); }, 20000);
+            var resp = await fetch(API_URL + '?type=imageProxy&urls=' + encodeURIComponent(joined), { signal: controller.signal });
+            clearTimeout(timer);
+            var result = await resp.json();
+            if (result.success && result.data) {
+              Object.keys(result.data).forEach(function(u) { if (result.data[u]) imageMap[u] = result.data[u]; });
+            }
+          } catch(e) { console.warn('Proxy fallback skipped:', e.message || ''); }
+        }
+        
+        var total = Object.keys(imageMap).length;
+        log('사진 ' + total + '/' + uniqueUrls.length + '장 완료');
+        return imageMap;
+      }
+
+      // Collect all photo URLs
+      var allPhotoUrls = [];
+      filteredByYear.forEach(function(s) {
+        if (s.photo) allPhotoUrls.push(s.photo);
+        if (s.photo2) allPhotoUrls.push(s.photo2);
+        if (s.actionPhoto) allPhotoUrls.push(s.actionPhoto);
+      });
+
+      // Fetch all images
+      var imageMap = await fetchImagesAsBase64(allPhotoUrls);
+      log('PPT 생성중...');
+
       var pptx = new PptxGenJS();
       pptx.layout = 'LAYOUT_WIDE';
       pptx.title = 'SIO 보고서 ' + selectedYear + '년';
@@ -3625,10 +3725,12 @@
         monthlyData.push({ month: m + '월', received: received, closed: closed });
       }
 
-      var inProgressItems = filteredByYear.filter(function(s) { return s.status === '조치중' || s.status === '미조치'; });
-      var completedItems = filteredByYear.filter(function(s) { return s.status === '조치완료'; });
-      var rejectedItems = filteredByYear.filter(function(s) { return s.status === '기각'; });
+      var sortNewest = function(arr) { return arr.sort(function(a, b) { var da = parseDate(a.date), db = parseDate(b.date); if (!da) return 1; if (!db) return -1; return db - da; }); };
+      var inProgressItems = sortNewest(filteredByYear.filter(function(s) { return s.status === '조치중' || s.status === '미조치'; }));
+      var completedItems = sortNewest(filteredByYear.filter(function(s) { return s.status === '조치완료'; }));
+      var rejectedItems = sortNewest(filteredByYear.filter(function(s) { return s.status === '기각'; }));
 
+      // ===== SLIDE 1: Dashboard =====
       var slide1 = pptx.addSlide();
       slide1.background = { color: C.bg };
       slide1.addText('SIO 진행 현황', { x: 0.3, y: 0.15, w: 3, h: 0.35, fontSize: 20, bold: true, color: C.dark });
@@ -3707,6 +3809,21 @@
       var fmtDate = function(ds) { if (!ds) return ''; var d = parseDate(ds); if (!d) return ds; return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0'); };
       var calcDays = function(tds) { if (!tds) return 0; var t = parseDate(tds); if (!t) return 0; return Math.floor((new Date() - t) / 86400000); };
 
+      // Helper: add image or placeholder
+      var addPhotoOrPlaceholder = function(slide, url, x, y, w, h, bgColor, borderColor, borderPt) {
+        slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: x, y: y, w: w, h: h, fill: { color: bgColor || C.veryLightGray }, line: { color: borderColor || C.border, pt: borderPt || 0.5 }, rectRadius: 0.06 });
+        var b64 = imageMap[url];
+        var pad = 0.05;
+        if (b64) {
+          try {
+            slide.addImage({ data: b64, x: x + pad, y: y + pad, w: w - pad*2, h: h - pad*2, sizing: { type: 'cover', w: w - pad*2, h: h - pad*2 } });
+          } catch(e) { console.error('Image insert error:', e); }
+        } else if (url) {
+          slide.addText('📷', { x: x, y: y + h/2 - 0.15, w: w, h: 0.3, fontSize: 14, color: C.lightGray, align: 'center', valign: 'middle' });
+        }
+      };
+
+      // ===== SLIDE 2+: In Progress =====
       if (inProgressItems.length > 0) {
         var pages = Math.ceil(inProgressItems.length / cardsPerPage);
         for (var page = 0; page < pages; page++) {
@@ -3722,9 +3839,11 @@
             slide.addText('장소: ' + (item.location || '').slice(0, 10), { x: cx + 1.55, y: cy + 0.16, w: 1.45, h: 0.2, fontSize: 9, color: C.dark });
             slide.addText('내용: ' + (item.content || '').slice(0, 45), { x: cx + 0.1, y: cy + 0.38, w: cardW - 0.2, h: 0.42, fontSize: 9, color: C.dark, valign: 'top' });
             var photoY = cy + 0.85, photoW = (cardW - 0.3) / 2, photoH = 1.25;
-            slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx + 0.1, y: photoY, w: photoW, h: photoH, fill: { color: C.veryLightGray }, line: { color: C.border, pt: 0.5 }, rectRadius: 0.06 });
+            // 원거리 사진 (photo)
+            addPhotoOrPlaceholder(slide, item.photo, cx + 0.1, photoY, photoW, photoH);
             slide.addText('원거리', { x: cx + 0.1, y: photoY + photoH + 0.02, w: photoW, h: 0.16, fontSize: 8, color: C.lightGray, align: 'center' });
-            slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx + 0.1 + photoW + 0.1, y: photoY, w: photoW, h: photoH, fill: { color: C.veryLightGray }, line: { color: C.border, pt: 0.5 }, rectRadius: 0.06 });
+            // 근거리 사진 (photo2)
+            addPhotoOrPlaceholder(slide, item.photo2, cx + 0.1 + photoW + 0.1, photoY, photoW, photoH);
             slide.addText('근거리', { x: cx + 0.1 + photoW + 0.1, y: photoY + photoH + 0.02, w: photoW, h: 0.16, fontSize: 8, color: C.lightGray, align: 'center' });
             var bottomY = cy + 2.38;
             slide.addShape(pptx.shapes.LINE, { x: cx + 0.1, y: bottomY, w: cardW - 0.2, h: 0, line: { color: C.border, pt: 0.5 } });
@@ -3737,6 +3856,7 @@
         }
       }
 
+      // ===== Completed Items =====
       if (completedItems.length > 0) {
         var pages = Math.ceil(completedItems.length / cardsPerPage);
         for (var page = 0; page < pages; page++) {
@@ -3752,9 +3872,11 @@
             slide.addText('장소: ' + (item.location || '').slice(0, 10), { x: cx + 1.55, y: cy + 0.16, w: 1.45, h: 0.2, fontSize: 9, color: C.dark });
             slide.addText('내용: ' + (item.content || '').slice(0, 45), { x: cx + 0.1, y: cy + 0.38, w: cardW - 0.2, h: 0.38, fontSize: 9, color: C.dark, valign: 'top' });
             var photoY = cy + 0.78, photoW = (cardW - 0.3) / 2, photoH = 0.9;
-            slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx + 0.1, y: photoY, w: photoW, h: photoH, fill: { color: C.veryLightGray }, line: { color: C.border, pt: 0.5 }, rectRadius: 0.06 });
+            // 원거리 사진
+            addPhotoOrPlaceholder(slide, item.photo, cx + 0.1, photoY, photoW, photoH);
             slide.addText('원거리', { x: cx + 0.1, y: photoY + photoH + 0.01, w: photoW, h: 0.14, fontSize: 7, color: C.lightGray, align: 'center' });
-            slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx + 0.1 + photoW + 0.1, y: photoY, w: photoW, h: photoH, fill: { color: 'E8F5E9' }, line: { color: C.green, pt: 1 }, rectRadius: 0.06 });
+            // 조치사진
+            addPhotoOrPlaceholder(slide, item.actionPhoto, cx + 0.1 + photoW + 0.1, photoY, photoW, photoH, 'E8F5E9', C.green, 1);
             slide.addText('조치사진', { x: cx + 0.1 + photoW + 0.1, y: photoY + photoH + 0.01, w: photoW, h: 0.14, fontSize: 7, color: C.green, align: 'center' });
             var bottomY = cy + 1.88;
             slide.addShape(pptx.shapes.LINE, { x: cx + 0.1, y: bottomY, w: cardW - 0.2, h: 0, line: { color: C.border, pt: 0.5 } });
@@ -3767,6 +3889,7 @@
         }
       }
 
+      // ===== Rejected Items =====
       if (rejectedItems.length > 0) {
         var pages = Math.ceil(rejectedItems.length / cardsPerPage);
         for (var page = 0; page < pages; page++) {
@@ -3791,6 +3914,7 @@
         }
       }
 
+      log('다운로드중...');
       pptx.writeFile({ fileName: 'SIO_보고서_' + selectedYear + '년.pptx' });
     };
   </script>
