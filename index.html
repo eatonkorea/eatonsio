@@ -708,7 +708,7 @@
             <div className="pt-4 space-y-3">
               <p><strong>SIO (Safety Improvement Observation)</strong>는 작업장의 안전, 품질, 환경 관련 위험요소나 개선사항을 발견했을 때 신고하고 관리하는 시스템입니다.</p>
               <div className="bg-blue-50 p-3 rounded-lg">
-                <p className="font-medium text-blue-800 mb-2">ðŸ“Œ SIO의 목적</p>
+                <p className="font-medium text-blue-800 mb-2">📌 SIO의 목적</p>
                 <ul className="space-y-1 text-blue-700">
                   <li>• 사고 예방 및 안전한 작업환경 조성</li>
                   <li>• 환경 위험요소 제거</li>
@@ -763,7 +763,7 @@
                 </div>
               </div>
               <div className="bg-yellow-50 p-3 rounded-lg mt-4">
-                <p className="font-medium text-yellow-800">ðŸ’¡ TIP</p>
+                <p className="font-medium text-yellow-800">💡 TIP</p>
                 <p className="text-yellow-700">구체적인 위치와 상황을 작성하면 빠른 조치에 도움이 됩니다!</p>
               </div>
             </div>
@@ -774,7 +774,7 @@
               <p>접수될 SIO 현황을 확인할 수 있습니다.</p>
               
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="font-medium text-gray-800 mb-2">ðŸ“‹ 상태 필터</p>
+                <p className="font-medium text-gray-800 mb-2">📋 상태 필터</p>
                 <p className="text-gray-600 text-sm">상단의 상태 버튼을 클릭하면 해당 상태의 SIO만 볼 수 있습니다.</p>
               </div>
 
@@ -796,7 +796,7 @@
                   <span className="text-gray-600">검토 결과 조치 불필요로 판정</span>
                 </div>
               </div>
-              <p className="mt-3">ðŸ” 검색창에서 내용, 장소, 구분으로 검색할 수 있습니다.</p>
+              <p className="mt-3">🔍 검색창에서 내용, 장소, 구분으로 검색할 수 있습니다.</p>
             </div>
           </Section>
 
@@ -821,7 +821,7 @@
                   <span><strong>조치담당자별:</strong> 조치완료 건수 순위</span>
                 </li>
               </ul>
-              <p className="mt-3">ðŸ“Š 오른쪽 상단 <strong>내보내기</strong> 버튼으로 엑셀 다운로드가 가능합니다.</p>
+              <p className="mt-3">📊 오른쪽 상단 <strong>내보내기</strong> 버튼으로 엑셀 다운로드가 가능합니다.</p>
             </div>
           </Section>
 
@@ -3525,7 +3525,7 @@
                         {deptEmail ? (
                           <p className="text-xs text-gray-500">발송 대상: {deptEmail}</p>
                         ) : (
-                          <p className="text-xs text-orange-600">âš ï¸ 이메일 미설정</p>
+                          <p className="text-xs text-orange-600">⚠️ 이메일 미설정</p>
                         )}
                         <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
                           {pendingItems.slice(0, 5).map(item => (
