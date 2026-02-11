@@ -216,7 +216,10 @@
               sioCategory: item['SIOCategory'] || item.sioCategory || '',
               kaf: item['KAF'] || item.kaf || '',
               targetDate: item['TargetDate'] || item.targetDate || '',
-              closedDate: item['ClosedDate'] || item.closedDate || ''
+              closedDate: item['ClosedDate'] || item.closedDate || '',
+              requestedTargetDate: item['RequestedTargetDate'] || item.requestedTargetDate || '',
+              targetDateReason: item['TargetDateReason'] || item.targetDateReason || '',
+              targetDateRequestStatus: item['TargetDateRequestStatus'] || item.targetDateRequestStatus || ''
             }));
             setSubmissions(formattedData);
           }
@@ -426,7 +429,7 @@
             {activeTab === 'help' && <HelpTab />}
             {activeTab === 'adminMobile' && <AdminMobile submissions={submissions} settings={settings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
-            {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendSelectedNotifications={handleSendSelectedNotifications} onSaveSettings={saveSettingsToServer} submissions={submissions} onRefresh={fetchData} />}
+            {activeTab === 'settings' && <SettingsPanel settings={settings} setSettings={setSettings} deptSettings={deptSettings} onSaveDeptSettings={handleSaveDeptSettings} onSendSelectedNotifications={handleSendSelectedNotifications} onSaveSettings={saveSettingsToServer} submissions={submissions} onRefresh={fetchData} onUpdate={handleUpdate} />}
           </main>
 
           <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
@@ -595,9 +598,9 @@
                 {/* Step 1: 접수 */}
                 <FlowCard step="1" title="SIO 접수" icon="ClipboardList" color="border-blue-500">
                   <div className="space-y-1">
-                    <p>• 직원이 안전/품질/환경 문제 발견</p>
+                    <p>• 직원이 안전/환경 문제 발견</p>
                     <p>• <strong>접수탭</strong>에서 SIO 작성</p>
-                    <p>• 근거리, 원거리 이 2장 첨부 (동일 사진 첨부 불가)</p>
+                    <p>• 근거리, 원거리 이미지 2장 첨부 (동일 사진 첨부 불가)</p>
                     <p>• 상태: <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">접수완료</span></p>
                   </div>
                 </FlowCard>
@@ -607,7 +610,7 @@
                 {/* Step 2: 목록 확인 */}
                 <FlowCard step="2" title="목록 등록" icon="List" color="border-gray-500">
                   <div className="space-y-1">
-                    <p>• <strong>목록탭</strong>에서 접수될 SIO 확인 가능</p>
+                    <p>• <strong>목록탭</strong>에서 접수된 SIO 확인 가능</p>
                     <p>• 전 직원이 현황 조회 가능 (접수자 이름은 미공개)</p>
                   </div>
                 </FlowCard>
@@ -652,7 +655,7 @@
                 {/* Step 6: 조치완료 */}
                 <FlowCard step="6" title="조치완료 & 메일 발송" icon="CheckCircle" color="border-green-600">
                   <div className="space-y-1">
-                    <p>• 관련 부서 및 담당자에게 <strong>조치완료 메일</strong> 자동 발송</p>
+                    <p>• 관련 부서 및 담당자 & 공장장님에게 <strong>조치완료 메일</strong> 자동 발송</p>
                     <p>• Closed Date 자동 기록 (당일)</p>
                     <p>• 상태: <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">조치완료</span></p>
                   </div>
@@ -663,7 +666,7 @@
                 {/* Step 7: 관리자 확인 */}
                 <FlowCard step="7" title="관리자 확인" icon="UserCheck" color="border-teal-500">
                   <div className="space-y-1">
-                    <p>• 담당자가 조치완료될 내용을 확인 후 Close</p>
+                    <p>• 담당자가 조치완료된 내용을 확인 후 Close</p>
                     <p>• 추가 조치사항이 필요할 경우 <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">조치중</span>으로 변경 후 재전달</p>
                   </div>
                 </FlowCard>
@@ -834,7 +837,7 @@
                 <p><strong>3.</strong> 조치담당자 이름 입력</p>
                 <p><strong>4.</strong> 조치내용 상세 작성</p>
                 <p><strong>5.</strong> 조치 후 사진 첨부 (권장)</p>
-                <p><strong>6.</strong> [저장] 되는 [조치완료] 클릭</p>
+                <p><strong>6.</strong> [저장] 또는 [조치완료] 클릭</p>
               </div>
             </div>
           </Section>
@@ -1028,7 +1031,7 @@
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">이름 * <span className="text-gray-400 text-xs">(한글만 입력, 리더/팀장 생략)</span></label>
               <input type="text" value={formData.name} onChange={(e) => {
-                const value = e.target.value.replace(/[^ㄱ-ㅎã…-ㅣ가-힣]/g, '').slice(0, 4);
+                const value = e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, '').slice(0, 4);
                 setFormData({ ...formData, name: value });
               }}
                 className="w-full p-3 border border-gray-300 rounded-lg" placeholder="이름을 입력하세요" maxLength={4} />
@@ -1166,7 +1169,7 @@
         if (!dateStr) return '';
         try {
           const str = String(dateStr);
-          // "2025-12-05" 되는 "2025. 12. 5." 형식 처리
+          // "2025-12-05" 또는 "2025. 12. 5." 형식 처리
           const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
           if (match) {
             return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
@@ -1362,6 +1365,8 @@
     function ReportTab({ submissions, deptSettings, loading, onRefresh }) {
       const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear());
       const [selectedPieDept, setSelectedPieDept] = React.useState(null);
+      const [showAllPersonStats, setShowAllPersonStats] = React.useState(false);
+      const [showAllActionStats, setShowAllActionStats] = React.useState(false);
       
       // 날짜 파싱 함수
       const parseDate = (dateStr) => {
@@ -1452,7 +1457,7 @@
         });
         return Object.entries(stats)
           .map(([name, data]) => [name, data.total - data.rejected, data.rejected, data.total])
-          .sort((a, b) => b[3] - a[3]); // 이 건수 기준 정렬
+          .sort((a, b) => b[3] - a[3]); // 총 건수 기준 정렬
       };
 
       // 4. 조치담당자별 조치완료 건수 - 이름(조치부서) 형식, 팀 구분 없음
@@ -1531,7 +1536,7 @@
           if (isRejected) personMonthlyStats[key].rejected[month]++;
         });
         
-        const personHeaders = ['부서', '이름', ...months.flatMap(m => [m + '월 접수', m + '월 기각']), '이 접수', '이 기각'];
+        const personHeaders = ['부서', '이름', ...months.flatMap(m => [m + '월 접수', m + '월 기각']), '총 접수', '총 기각'];
         const personRows = Object.values(personMonthlyStats)
           .map(p => {
             const totalAll = months.reduce((sum, m) => sum + (p.months[m] || 0), 0);
@@ -1558,13 +1563,13 @@
           actionPersonMonthlyStats[key].months[month]++;
         });
         
-        const actionPersonHeaders = ['부서', '이름', ...months.map(m => m + '월'), '이 건수'];
+        const actionPersonHeaders = ['부서', '이름', ...months.map(m => m + '월'), '총 건수'];
         const actionPersonRows = Object.values(actionPersonMonthlyStats)
           .map(p => {
             const total = months.reduce((sum, m) => sum + (p.months[m] || 0), 0);
             return [p.dept, p.name, ...months.map(m => p.months[m] || 0), total];
           })
-          .sort((a, b) => b[14] - a[14]); // 이 건수 기준 정렬
+          .sort((a, b) => b[14] - a[14]); // 총 건수 기준 정렬
         const ws4 = XLSX.utils.aoa_to_sheet([actionPersonHeaders, ...actionPersonRows]);
         XLSX.utils.book_append_sheet(wb, ws4, '조치담당자별 완료건수');
 
@@ -1610,98 +1615,6 @@
                 className="p-2 border border-gray-300 rounded-lg text-sm">
                 {years.map(y => <option key={y} value={y}>{y}년</option>)}
               </select>
-            </div>
-          </div>
-
-          {/* 1. 월별 부서별 접수 현황 */}
-          <div className="bg-white rounded-xl shadow-md p-4">
-            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-              <Icon name="Building" size={18} /> 월별 부서별 접수 현황
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="py-2 px-2 text-left text-gray-600 sticky left-0 bg-gray-50">부서</th>
-                    {months.map(m => (
-                      <th key={m} className="py-2 px-2 text-center text-gray-600 min-w-[40px]">{m}월</th>
-                    ))}
-                    <th className="py-2 px-2 text-center text-gray-600 font-bold">합계</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.keys(monthlyDeptStats).map(dept => {
-                    const deptData = monthlyDeptStats[dept];
-                    const total = months.reduce((sum, m) => sum + (deptData[m] || 0), 0);
-                    return (
-                      <tr key={dept} className="border-b hover:bg-gray-50">
-                        <td className="py-2 px-2 font-medium sticky left-0 bg-white">{dept}</td>
-                        {months.map(m => (
-                          <td key={m} className="py-2 px-2 text-center">{deptData[m] || '-'}</td>
-                        ))}
-                        <td className="py-2 px-2 text-center font-bold text-blue-600">{total}</td>
-                      </tr>
-                    );
-                  })}
-                  {Object.keys(monthlyDeptStats).length === 0 && (
-                    <tr><td colSpan={14} className="py-4 text-center text-gray-500">데이터가 없습니다.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* 2. 월별 조치부서별 조치 현황 */}
-          <div className="bg-white rounded-xl shadow-md p-4">
-            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-              <Icon name="CheckCircle" size={18} /> 월별 조치부서별 조치 현황
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="py-2 px-2 text-left text-gray-600 sticky left-0 bg-gray-50">조치부서</th>
-                    {months.map(m => (
-                      <th key={m} className="py-2 px-1 text-center text-gray-600 min-w-[60px]">
-                        <div>{m}월</div>
-                        <div className="flex text-xs">
-                          <span className="flex-1 text-green-600">완</span>
-                          <span className="flex-1 text-red-600">미</span>
-                        </div>
-                      </th>
-                    ))}
-                    <th className="py-2 px-2 text-center text-gray-600">합계</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.keys(monthlyActionDeptStats).map(dept => {
-                    const deptData = monthlyActionDeptStats[dept];
-                    const totalComplete = months.reduce((sum, m) => sum + (deptData[m]?.complete || 0), 0);
-                    const totalIncomplete = months.reduce((sum, m) => sum + (deptData[m]?.incomplete || 0), 0);
-                    return (
-                      <tr key={dept} className="border-b hover:bg-gray-50">
-                        <td className="py-2 px-2 font-medium sticky left-0 bg-white">{dept}</td>
-                        {months.map(m => (
-                          <td key={m} className="py-2 px-1 text-center">
-                            <div className="flex text-xs">
-                              <span className="flex-1 text-green-600">{deptData[m]?.complete || '-'}</span>
-                              <span className="flex-1 text-red-600">{deptData[m]?.incomplete || '-'}</span>
-                            </div>
-                          </td>
-                        ))}
-                        <td className="py-2 px-2 text-center">
-                          <span className="text-green-600 font-bold">{totalComplete}</span>
-                          <span className="text-gray-400 mx-1">/</span>
-                          <span className="text-red-600 font-bold">{totalIncomplete}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {Object.keys(monthlyActionDeptStats).length === 0 && (
-                    <tr><td colSpan={14} className="py-4 text-center text-gray-500">데이터가 없습니다.</td></tr>
-                  )}
-                </tbody>
-              </table>
             </div>
           </div>
 
@@ -1789,7 +1702,7 @@
               <Icon name="Users" size={18} /> 인원별 접수건수 ({selectedYear}년)
             </h3>
             <div className="space-y-2">
-              {personStats.map(([name, accepted, rejected, total], idx) => (
+              {(showAllPersonStats ? personStats : personStats.slice(0, 5)).map(([name, accepted, rejected, total], idx) => (
                 <div key={name} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs">{idx + 1}</span>
@@ -1806,6 +1719,12 @@
                   </div>
                 </div>
               ))}
+              {personStats.length > 5 && (
+                <button onClick={() => setShowAllPersonStats(!showAllPersonStats)} className="w-full py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg font-medium flex items-center justify-center gap-1">
+                  <Icon name={showAllPersonStats ? 'ChevronUp' : 'ChevronDown'} size={16} />
+                  {showAllPersonStats ? '접기' : `더보기 (${personStats.length - 5}명)`}
+                </button>
+              )}
               {personStats.length === 0 && <p className="text-gray-500 text-center py-4">데이터가 없습니다.</p>}
             </div>
           </div>
@@ -1816,7 +1735,7 @@
               <Icon name="UserCheck" size={18} /> 조치담당자별 조치완료 건수 ({selectedYear}년)
             </h3>
             <div className="space-y-2">
-              {actionPersonStats.map(([name, count], idx) => (
+              {(showAllActionStats ? actionPersonStats : actionPersonStats.slice(0, 5)).map(([name, count], idx) => (
                 <div key={name} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs">{idx + 1}</span>
@@ -1825,6 +1744,12 @@
                   <span className="text-green-600 font-bold">{count}건</span>
                 </div>
               ))}
+              {actionPersonStats.length > 5 && (
+                <button onClick={() => setShowAllActionStats(!showAllActionStats)} className="w-full py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg font-medium flex items-center justify-center gap-1">
+                  <Icon name={showAllActionStats ? 'ChevronUp' : 'ChevronDown'} size={16} />
+                  {showAllActionStats ? '접기' : `더보기 (${actionPersonStats.length - 5}명)`}
+                </button>
+              )}
               {actionPersonStats.length === 0 && <p className="text-gray-500 text-center py-4">데이터가 없습니다.</p>}
             </div>
           </div>
@@ -1835,7 +1760,7 @@
               <Icon name="Target" size={18} /> {selectedYear}년 월별 부서별 SIO 현황
             </h3>
             {(() => {
-              // 부서별 이인원 가져오기 (소수점 허용)
+              // 부서별 총인원 가져오기 (소수점 허용)
               const deptHeadcount = {};
               deptSettings.forEach(d => {
                 if (d.department && d.totalMembers) {
@@ -1843,13 +1768,13 @@
                 }
               });
               
-              // 등록될 부서 목록 (이인원이 있는 부서만)
+              // 등록될 부서 목록 (총인원이 있는 부서만)
               const departments = Object.keys(deptHeadcount).filter(d => deptHeadcount[d] > 0);
               
-              // 전체 이인원
+              // 전체 총인원
               const totalHeadcount = departments.reduce((sum, d) => sum + deptHeadcount[d], 0);
               
-              // FY Target (연간목표) = 이인원 Ã— 2 (3.5명이면 7건)
+              // FY Target (연간목표) = 총인원 × 2 (3.5명이면 7건)
               const fyTargetByDept = {};
               departments.forEach(d => {
                 fyTargetByDept[d] = deptHeadcount[d] * 2;
@@ -1919,7 +1844,7 @@
                 targetRateByMonth[m] = Math.round((m / 12) * 100);
               });
               
-              // Participant Rate (참여율) = MTD / YTD Target Ã— 100
+              // Participant Rate (참여율) = MTD / YTD Target × 100
               const participantRateByMonth = {};
               months.forEach(m => {
                 const ytdTarget = ytdTargetByMonth[m];
@@ -2064,7 +1989,7 @@
                   </div>
                   
                   {departments.length === 0 && (
-                    <p className="text-gray-500 text-center py-8">부서설정에서 이인원을 입력해주세요.</p>
+                    <p className="text-gray-500 text-center py-8">부서설정에서 총인원을 입력해주세요.</p>
                   )}
                 </div>
               );
@@ -2079,6 +2004,10 @@
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
       const [passwordDept, setPasswordDept] = React.useState(null);
       const [actionFilter, setActionFilter] = React.useState('pending'); // 'all', 'pending', 'completed'
+      const [tdRequestModal, setTdRequestModal] = React.useState(null); // { itemId, currentDate }
+      const [tdNewDate, setTdNewDate] = React.useState('');
+      const [tdReason, setTdReason] = React.useState('');
+      const [tdSubmitting, setTdSubmitting] = React.useState(false);
 
       // URL에서 받은 부서로 자동 이동
       React.useEffect(() => {
@@ -2210,9 +2139,20 @@
                   {/* 기본 정보 */}
                   <div className="space-y-2 text-sm mb-3">
                     <div className="flex">
-                      <span className="text-gray-500 w-20 flex-shrink-0">일자</span>
+                      <span className="text-gray-500 w-20 flex-shrink-0">접수일자</span>
                       <span className="text-gray-700">{formatDate(item.date)}</span>
                     </div>
+                    {item.targetDate && <div className="flex items-center">
+                      <span className="text-gray-500 w-20 flex-shrink-0">Target Date</span>
+                      <span className="text-red-500 font-medium">{formatDate(item.targetDate)}</span>
+                      {item.status !== '조치완료' && item.status !== '기각' && (
+                        item.targetDateRequestStatus === 'pending' ? (
+                          <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">변경 요청중</span>
+                        ) : (
+                          <button onClick={() => { setTdRequestModal({ itemId: item.id, currentDate: item.targetDate }); setTdNewDate(''); setTdReason(''); }} className="ml-2 text-gray-400 hover:text-blue-600"><Icon name="Pencil" size={14} /></button>
+                        )
+                      )}
+                    </div>}
                     <div className="flex">
                       <span className="text-gray-500 w-20 flex-shrink-0">장소</span>
                       <span className="text-gray-700">{item.location}</span>
@@ -2279,6 +2219,88 @@
               <div className="relative max-w-3xl max-h-full">
                 <img src={convertDriveUrl(selectedPhoto)} alt="사진" className="max-w-full max-h-[80vh] object-contain rounded-lg bg-white" />
                 <button onClick={() => setSelectedPhoto(null)} className="absolute top-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg"><Icon name="X" size={24} /></button>
+              </div>
+            </div>
+          )}
+
+          {/* Target Date 수정 요청 모달 */}
+          {tdRequestModal && !tdRequestModal.confirm && (
+            <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4" onClick={() => setTdRequestModal(null)}>
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <Icon name="Calendar" size={20} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-800">Target Date 변경 요청</h3>
+                    <p className="text-xs text-gray-500">현재: {formatDate(tdRequestModal.currentDate)}</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">변경 희망일</label>
+                    <input type="date" value={tdNewDate} onChange={(e) => setTdNewDate(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">변경 사유</label>
+                    <textarea value={tdReason} onChange={(e) => setTdReason(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg text-sm h-24 resize-none" placeholder="변경 사유를 입력하세요..." />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-5">
+                  <button onClick={() => setTdRequestModal(null)} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600 font-medium">취소</button>
+                  <button onClick={() => {
+                    if (!tdNewDate) { alert('변경 희망일을 선택하세요.'); return; }
+                    if (!tdReason.trim()) { alert('변경 사유를 입력하세요.'); return; }
+                    setTdRequestModal({ ...tdRequestModal, confirm: true });
+                  }} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium">
+                    요청
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Target Date 변경 요청 - 메일 발송 확인 모달 */}
+          {tdRequestModal && tdRequestModal.confirm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+                <div className="text-center mb-4">
+                  <Icon name="Mail" size={40} className="mx-auto text-orange-500 mb-3" />
+                  <h3 className="font-bold text-lg text-gray-800 mb-2">변경 요청 확인</h3>
+                  <p className="text-sm text-gray-600">변경 요청을 제출하시면<br/>관련부서 및 담당자에게<br/>메일이 발송됩니다.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setTdRequestModal({ ...tdRequestModal, confirm: false })} className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-600 font-medium">취소</button>
+                  <button onClick={async () => {
+                    setTdSubmitting(true);
+                    try {
+                      const targetItem = submissions.find(s => s.id.toString() === tdRequestModal.itemId.toString());
+                      await onUpdate(tdRequestModal.itemId, {
+                        requestedTargetDate: tdNewDate,
+                        targetDateReason: tdReason.trim(),
+                        targetDateRequestStatus: 'pending'
+                      });
+                      // 메일 발송
+                      try {
+                        await fetch(API_URL, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'text/plain' },
+                          body: JSON.stringify({ action: 'sendTdChangeRequestEmail', itemData: {
+                            ...targetItem,
+                            requestedTargetDate: tdNewDate,
+                            targetDateReason: tdReason.trim()
+                          }})
+                        });
+                      } catch(e) { console.error('TD 변경요청 메일 발송 실패:', e); }
+                      await onRefresh();
+                      setTdRequestModal(null);
+                      alert('Target Date 변경 요청이 제출되었습니다.');
+                    } catch(e) { alert('요청 실패: ' + e.message); }
+                    setTdSubmitting(false);
+                  }} disabled={tdSubmitting} className="flex-1 py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50">
+                    {tdSubmitting ? '발송 중...' : '요청'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2386,7 +2408,7 @@
 
       return (
         <div className="space-y-3">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치담당자</label><input type="text" value={actionPerson} onChange={(e) => setActionPerson(e.target.value.replace(/[^ㄱ-ㅎã…-ㅣ가-힣]/g, ''))} className="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="담당자 이름 (한글만)" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치담당자</label><input type="text" value={actionPerson} onChange={(e) => setActionPerson(e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, ''))} className="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="담당자 이름 (한글만)" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">조치내용</label><textarea value={actionContent} onChange={(e) => setActionContent(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-sm h-20 resize-none" placeholder="조치 내용을 입력하세요" /></div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">조치사진</label>
@@ -2432,6 +2454,7 @@
       const [filters, setFilters] = React.useState({ department: '', category: '', location: '', status: '' });
       const [deleteTarget, setDeleteTarget] = React.useState(null);
       const [saving, setSaving] = React.useState(false);
+      const [showTdRequests, setShowTdRequests] = React.useState(false);
       
       // 수정될 데이터 추적
       const [editedData, setEditedData] = React.useState({});
@@ -2624,18 +2647,79 @@
         return (<div className="bg-white rounded-xl shadow-md p-6 text-center"><Icon name="Shield" size={64} className="mx-auto text-gray-300 mb-4" /><p className="text-gray-500">접수될 SIO가 없습니다.</p><button onClick={onRefresh} className="mt-4 text-blue-600 flex items-center gap-2 mx-auto"><Icon name="RefreshCw" size={16} /> 새로고침</button></div>);
       }
 
+      const tdPendingRequests = submissions.filter(s => s.targetDateRequestStatus === 'pending');
+
       return (
         <div className="space-y-4">
           {/* 헤더 */}
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-bold text-gray-800">관리 목록 ({filteredSubmissions.length}건)</h2>
             <div className="flex gap-2">
+              <button onClick={() => setShowTdRequests(!showTdRequests)} className={`relative flex items-center gap-1 px-3 py-2 rounded-lg font-medium text-sm transition-colors ${showTdRequests ? 'bg-orange-500 text-white' : 'bg-white text-orange-600 border border-orange-300 hover:bg-orange-50'}`}>
+                <Icon name="Calendar" size={16} />TD 변경요청
+                {tdPendingRequests.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{tdPendingRequests.length}</span>}
+              </button>
               <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
               <button onClick={() => setShowFilter(!showFilter)} className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition-colors ${showFilter ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border'}`}>
                 <Icon name="Filter" size={18} />필터{activeFilterCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilterCount}</span>}
               </button>
             </div>
           </div>
+
+          {/* Target Date 변경 요청 목록 */}
+          {showTdRequests && (
+            <div className="bg-white rounded-xl shadow-md p-4 border-2 border-orange-200">
+              <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                <Icon name="Calendar" size={18} className="text-orange-500" /> Target Date 변경 요청
+                {tdPendingRequests.length > 0 && <span className="bg-orange-500 text-white text-xs rounded-full px-2 py-0.5">{tdPendingRequests.length}건</span>}
+              </h3>
+              {tdPendingRequests.length === 0 ? (
+                <p className="text-gray-500 text-center py-6">변경 요청이 없습니다.</p>
+              ) : (
+                <div className="space-y-3">
+                  {tdPendingRequests.map(item => (
+                    <div key={item.id} className="border border-orange-200 bg-orange-50 rounded-lg p-3">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-medium text-gray-800">{item.actionDept || item.department} - {item.location}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{(item.content || '').slice(0, 50)}</p>
+                        </div>
+                        <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs flex-shrink-0">대기중</span>
+                      </div>
+                      <div className="bg-white rounded-lg p-2.5 text-sm space-y-1.5 mb-3">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">현재 Target Date</span>
+                          <span className="text-red-500 font-medium">{formatDate(item.targetDate)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">변경 희망일</span>
+                          <span className="text-blue-600 font-bold">{formatDate(item.requestedTargetDate)}</span>
+                        </div>
+                        <div className="pt-1.5 border-t">
+                          <span className="text-gray-500">사유: </span>
+                          <span className="text-gray-700">{item.targetDateReason}</span>
+                        </div>
+                      </div>
+                      <button onClick={async () => {
+                        if (!confirm('Target Date를 ' + formatDate(item.requestedTargetDate) + '로 변경하시겠습니까?')) return;
+                        try {
+                          await onUpdate(item.id, {
+                            targetDate: item.requestedTargetDate,
+                            requestedTargetDate: '',
+                            targetDateReason: '',
+                            targetDateRequestStatus: 'approved'
+                          });
+                          await onRefresh();
+                        } catch(e) { alert('승인 실패: ' + e.message); }
+                      }} className="w-full py-2 bg-green-500 text-white rounded-lg font-medium text-sm hover:bg-green-600 flex items-center justify-center gap-1">
+                        <Icon name="Check" size={16} /> 승인
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 변경사항 알림 바 */}
           {changedCount > 0 && (
@@ -3258,7 +3342,7 @@
       );
     }
 
-    function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendSelectedNotifications, onSaveSettings, submissions, onRefresh }) {
+    function SettingsPanel({ settings, setSettings, deptSettings, onSaveDeptSettings, onSendSelectedNotifications, onSaveSettings, submissions, onRefresh, onUpdate }) {
       const [newItem, setNewItem] = React.useState({ departments: '', categories: '', locations: '' });
       const [localDeptSettings, setLocalDeptSettings] = React.useState([]);
       const [alertModal, setAlertModal] = React.useState(null);
@@ -3388,7 +3472,7 @@
         <div className="space-y-6">
           <h2 className="text-lg font-bold text-gray-800">설정</h2>
 
-          {/* 부서 설정 (이메일/비밀번호/이인원/참조) */}
+          {/* 부서 설정 (이메일/비밀번호/총인원/참조) */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 부서별 설정</h3>
             <div className="space-y-3">
@@ -3416,7 +3500,7 @@
                     <div className="flex items-center gap-2">
                       <Icon name="Users" size={14} className="text-gray-400 flex-shrink-0" />
                       <input type="number" step="0.5" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
-                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="이인원 (예: 3.5)" />
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원 (예: 3.5)" />
                     </div>
                     <div className="flex items-center gap-2 lg:col-span-2">
                       <Icon name="Copy" size={14} className="text-gray-400 flex-shrink-0" />
@@ -3844,10 +3928,9 @@
             var cx = 0.3 + col * (cardW + cardGapX), cy = 0.65 + row * (cardH + cardGapY);
             slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx, y: cy, w: cardW, h: cardH, fill: { color: C.white }, line: { color: C.yellow, pt: 2 }, rectRadius: cardRadius });
             slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx + 0.03, y: cy + 0.03, w: cardW - 0.06, h: 0.08, fill: { color: C.lightYellow }, rectRadius: 0.06 });
-            slide.addText('접수: ' + (item.department || ''), { x: cx + 0.1, y: cy + 0.16, w: 1.5, h: 0.2, fontSize: 9, color: C.dark });
-            slide.addText('장소: ' + (item.location || '').slice(0, 10), { x: cx + 1.55, y: cy + 0.16, w: 1.45, h: 0.2, fontSize: 9, color: C.dark });
-            slide.addText('내용: ' + (item.content || '').slice(0, 45), { x: cx + 0.1, y: cy + 0.38, w: cardW - 0.2, h: 0.42, fontSize: 9, color: C.dark, valign: 'top' });
-            var photoY = cy + 0.85, photoW = (cardW - 0.3) / 2, photoH = 1.25;
+            slide.addText('장소: ' + (item.location || ''), { x: cx + 0.1, y: cy + 0.16, w: cardW - 0.2, h: 0.2, fontSize: 9, color: C.dark });
+            slide.addText('내용: ' + (item.content || '').slice(0, 80), { x: cx + 0.1, y: cy + 0.38, w: cardW - 0.2, h: 0.55, fontSize: 9, color: C.dark, valign: 'top' });
+            var photoY = cy + 0.98, photoW = (cardW - 0.3) / 2, photoH = 1.1;
             // 원거리 사진 (photo)
             addPhotoOrPlaceholder(slide, item.photo, cx + 0.1, photoY, photoW, photoH);
             slide.addText('원거리', { x: cx + 0.1, y: photoY + photoH + 0.02, w: photoW, h: 0.16, fontSize: 8, color: C.lightGray, align: 'center' });
@@ -3877,21 +3960,20 @@
             var cx = 0.3 + col * (cardW + cardGapX), cy = 0.65 + row * (cardH + cardGapY);
             slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx, y: cy, w: cardW, h: cardH, fill: { color: C.white }, line: { color: C.green, pt: 2 }, rectRadius: cardRadius });
             slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx + 0.03, y: cy + 0.03, w: cardW - 0.06, h: 0.08, fill: { color: C.lightGreen }, rectRadius: 0.06 });
-            slide.addText('접수: ' + (item.department || ''), { x: cx + 0.1, y: cy + 0.16, w: 1.5, h: 0.2, fontSize: 9, color: C.dark });
-            slide.addText('장소: ' + (item.location || '').slice(0, 10), { x: cx + 1.55, y: cy + 0.16, w: 1.45, h: 0.2, fontSize: 9, color: C.dark });
-            slide.addText('내용: ' + (item.content || '').slice(0, 45), { x: cx + 0.1, y: cy + 0.38, w: cardW - 0.2, h: 0.38, fontSize: 9, color: C.dark, valign: 'top' });
-            var photoY = cy + 0.78, photoW = (cardW - 0.3) / 2, photoH = 0.9;
+            slide.addText('장소: ' + (item.location || ''), { x: cx + 0.1, y: cy + 0.16, w: cardW - 0.2, h: 0.2, fontSize: 9, color: C.dark });
+            slide.addText('내용: ' + (item.content || '').slice(0, 80), { x: cx + 0.1, y: cy + 0.38, w: cardW - 0.2, h: 0.55, fontSize: 9, color: C.dark, valign: 'top' });
+            var photoY = cy + 0.95, photoW = (cardW - 0.3) / 2, photoH = 0.8;
             // 원거리 사진
             addPhotoOrPlaceholder(slide, item.photo, cx + 0.1, photoY, photoW, photoH);
             slide.addText('원거리', { x: cx + 0.1, y: photoY + photoH + 0.01, w: photoW, h: 0.14, fontSize: 7, color: C.lightGray, align: 'center' });
             // 조치사진
             addPhotoOrPlaceholder(slide, item.actionPhoto, cx + 0.1 + photoW + 0.1, photoY, photoW, photoH, 'E8F5E9', C.green, 1);
             slide.addText('조치사진', { x: cx + 0.1 + photoW + 0.1, y: photoY + photoH + 0.01, w: photoW, h: 0.14, fontSize: 7, color: C.green, align: 'center' });
-            var bottomY = cy + 1.88;
+            var bottomY = cy + 1.95;
             slide.addShape(pptx.shapes.LINE, { x: cx + 0.1, y: bottomY, w: cardW - 0.2, h: 0, line: { color: C.border, pt: 0.5 } });
             slide.addText('조치부서: ' + (item.actionDept || ''), { x: cx + 0.1, y: bottomY + 0.05, w: 1.3, h: 0.16, fontSize: 9, color: C.dark });
             slide.addText('완료일: ' + fmtDate(item.closedDate), { x: cx + 1.35, y: bottomY + 0.05, w: 1.65, h: 0.16, fontSize: 9, bold: true, color: C.green, align: 'right' });
-            slide.addText('조치내용: ' + (item.actionContent || '').slice(0, 55), { x: cx + 0.1, y: bottomY + 0.22, w: cardW - 0.2, h: 0.55, fontSize: 9, color: C.dark, valign: 'top' });
+            slide.addText('조치내용: ' + (item.actionContent || '').slice(0, 80), { x: cx + 0.1, y: bottomY + 0.22, w: cardW - 0.2, h: 0.55, fontSize: 9, color: C.dark, valign: 'top' });
             slide.addShape(pptx.shapes.ROUNDED_RECTANGLE, { x: cx + 0.1, y: cy + cardH - 0.28, w: cardW - 0.2, h: 0.2, fill: { color: C.green }, rectRadius: 0.03 });
             slide.addText('조치완료', { x: cx + 0.1, y: cy + cardH - 0.28, w: cardW - 0.2, h: 0.2, fontSize: 9, bold: true, color: C.white, align: 'center', valign: 'middle' });
           });
