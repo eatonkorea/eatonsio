@@ -2023,6 +2023,7 @@
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
       const [passwordDept, setPasswordDept] = React.useState(null);
       const [actionFilter, setActionFilter] = React.useState('pending'); // 'all', 'pending', 'completed'
+      const [personFilter, setPersonFilter] = React.useState(''); // 조치담당자 필터
       const [tdRequestModal, setTdRequestModal] = React.useState(null); // { itemId, currentDate }
       const [tdNewDate, setTdNewDate] = React.useState('');
       const [tdReason, setTdReason] = React.useState('');
@@ -2067,9 +2068,16 @@
       const completedSubmissions = allDeptSubmissions.filter(s => s.status === '조치완료' || s.status === '기각');
       
       // 필터에 따른 목록
-      const filteredSubmissions = (actionFilter === 'all' ? allDeptSubmissions 
+      const preFiltered = (actionFilter === 'all' ? allDeptSubmissions 
         : actionFilter === 'pending' ? pendingSubmissions 
-        : completedSubmissions).slice().sort((a, b) => new Date(String(b.date || '')) - new Date(String(a.date || '')));
+        : completedSubmissions);
+      
+      // 조치담당자 목록 (고유값)
+      const actionPersonList = [...new Set(allDeptSubmissions.map(s => s.actionPerson).filter(Boolean))].sort();
+      
+      const filteredSubmissions = preFiltered
+        .filter(item => !personFilter || (item.actionPerson || '') === personFilter)
+        .sort((a, b) => new Date(String(b.date || '')) - new Date(String(a.date || '')));
       
       const getStatusColor = (status) => {
         switch (status) {
@@ -2119,10 +2127,18 @@
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <button onClick={() => setSelectedDept(null)} className="text-gray-500 p-2 hover:bg-gray-100 rounded-lg"><Icon name="ArrowLeft" size={20} /></button>
+              <button onClick={() => { setSelectedDept(null); setPersonFilter(''); }} className="text-gray-500 p-2 hover:bg-gray-100 rounded-lg"><Icon name="ArrowLeft" size={20} /></button>
               <h2 className="text-lg font-bold text-gray-800">{selectedDept} 조치목록</h2>
             </div>
-            <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
+            <div className="flex items-center gap-2">
+              {actionPersonList.length > 0 && (
+                <select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} className="p-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">담당자 전체</option>
+                  {actionPersonList.map((p, i) => <option key={i} value={p}>{p}</option>)}
+                </select>
+              )}
+              <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
+            </div>
           </div>
           
           {/* 필터 버튼 */}
@@ -2720,12 +2736,54 @@
 
       const tdPendingRequests = submissions.filter(s => s.targetDateRequestStatus === 'pending');
 
+      // 엑셀 내보내기
+      const handleExportExcel = () => {
+        const headers = ['일자', '이름', '부서', '구분', '장소', '내용', '조치여부', '조치부서', '조치담당', '조치내용', '요청사항', '비고', '메일발송', 'RPN', 'Impact', 'Incident', 'Hazard', 'Top5', 'SIO Category', 'KAF', 'Target Date', 'Closed Date'];
+        const rows = filteredSubmissions.map(item => [
+          formatDate(item.date),
+          item.name || '',
+          item.department || '',
+          item.category || '',
+          item.location || '',
+          item.content || '',
+          item.status || '',
+          item.actionDept || '',
+          item.actionPerson || '',
+          item.actionContent || '',
+          item.request || '',
+          item.notes || '',
+          item.emailSent ? 'Y' : 'N',
+          item.rpn || '',
+          item.impact || '',
+          item.incident || '',
+          item.hazard || '',
+          item.top5 || '',
+          item.sioCategory || '',
+          item.kaf || '',
+          formatDate(item.targetDate),
+          formatDate(item.closedDate)
+        ]);
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        // 컬럼 너비 설정
+        ws['!cols'] = [
+          {wch:12},{wch:8},{wch:10},{wch:14},{wch:14},{wch:40},{wch:10},{wch:10},{wch:8},{wch:40},{wch:20},{wch:15},{wch:6},{wch:6},{wch:8},{wch:8},{wch:8},{wch:6},{wch:14},{wch:6},{wch:12},{wch:12}
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'SIO 관리목록');
+        const today = new Date();
+        const dateStr = today.getFullYear() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0');
+        XLSX.writeFile(wb, 'SIO_관리목록_' + dateStr + '.xlsx');
+      };
+
       return (
         <div className="space-y-4">
           {/* 헤더 */}
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-bold text-gray-800">관리 목록 ({filteredSubmissions.length}건)</h2>
             <div className="flex gap-2">
+              <button onClick={handleExportExcel} className="flex items-center gap-1 px-3 py-2 rounded-lg font-medium text-sm bg-white text-green-600 border border-green-300 hover:bg-green-50">
+                <Icon name="Download" size={16} />엑셀
+              </button>
               <button onClick={() => setShowTdRequests(!showTdRequests)} className={`relative flex items-center gap-1 px-3 py-2 rounded-lg font-medium text-sm transition-colors ${showTdRequests ? 'bg-orange-500 text-white' : 'bg-white text-orange-600 border border-orange-300 hover:bg-orange-50'}`}>
                 <Icon name="Calendar" size={16} />TD 변경요청
                 {tdPendingRequests.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{tdPendingRequests.length}</span>}
