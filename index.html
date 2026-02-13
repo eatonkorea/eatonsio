@@ -275,10 +275,11 @@
         setLoading(true);
         try {
           const today = new Date();
-          const dateOnly = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+          const dateOnly = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0') + ' ' + String(today.getHours()).padStart(2, '0') + ':' + String(today.getMinutes()).padStart(2, '0') + ':' + String(today.getSeconds()).padStart(2, '0');
+          console.log('접수 날짜:', dateOnly);
           const payload = JSON.stringify({
             action: 'add',
-            data: { date: dateOnly, ...data, status: '접수완료', actionDept: '', actionPerson: '', actionContent: '' }
+            data: { ...data, date: dateOnly, status: '접수완료', actionDept: '', actionPerson: '', actionContent: '' }
           });
           
           // 데이터 크기 계산
@@ -1181,22 +1182,21 @@
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
-        try {
-          const str = String(dateStr);
-          // "2025-12-05" 또는 "2025. 12. 5." 형식 처리
-          const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
-          if (match) {
-            return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
-          }
-          // Date 객체로 시도
-          const date = new Date(str);
-          if (!isNaN(date.getTime())) {
-            return date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0');
-          }
-          return str.split(' ')[0]; // 시간 부분 제거
-        } catch (e) {
-          return String(dateStr).split(' ')[0];
+        const str = String(dateStr);
+        // 타임스탬프 (13자리)
+        if (/^\d{13}$/.test(str)) {
+          const d = new Date(parseInt(str));
+          return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
         }
+        // ISO 형식 먼저 체크 (T 포함)
+        if (str.includes('T')) {
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+        }
+        // 일반 날짜 형식
+        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
+        if (match) return match[1] + '/' + match[2].padStart(2, '0') + '/' + match[3].padStart(2, '0');
+        return str.split(' ')[0];
       };
 
       // 상태별 건수
@@ -1208,7 +1208,7 @@
         '기각': submissions.filter(s => s.status === '기각').length
       };
 
-      // 검색 및 상태 필터링
+      // 검색 및 상태 필터링 + 최신순 정렬
       const filteredSubmissions = submissions.filter(item => {
         // 상태 필터
         if (statusFilter && item.status !== statusFilter) return false;
@@ -1223,7 +1223,7 @@
           checkField(item.actionDept) ||
           checkField(item.actionContent)
         );
-      });
+      }).sort((a, b) => new Date(String(b.date || '')) - new Date(String(a.date || '')));
 
       if (submissions.length === 0 && !loading) {
         return (
@@ -1277,7 +1277,7 @@
           )}
           
           <div className="space-y-3">
-            {filteredSubmissions.slice().reverse().map((item) => (
+            {filteredSubmissions.map((item) => (
               <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
                 {/* 상태 표시 */}
                 <div className="flex justify-between items-center mb-3">
@@ -1623,12 +1623,17 @@
 
           {/* 필터 - 연도만 */}
           <div className="bg-white rounded-xl shadow-md p-4">
-            <div className="flex gap-3 items-center">
+            <div className="flex gap-3 items-center flex-wrap">
               <label className="text-sm text-gray-600">연도 선택</label>
               <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
                 className="p-2 border border-gray-300 rounded-lg text-sm">
                 {years.map(y => <option key={y} value={y}>{y}년</option>)}
               </select>
+              <div className="flex gap-3 ml-auto text-sm">
+                <span className="px-3 py-1.5 bg-gray-100 rounded-lg font-medium">총건수 : <strong className="text-blue-600">{filteredByYear.length}</strong>건</span>
+                <span className="px-3 py-1.5 bg-yellow-50 rounded-lg font-medium">Near Miss : <strong className="text-yellow-600">{filteredByYear.filter(s => s.category === 'Near Miss').length}</strong>건</span>
+                <span className="px-3 py-1.5 bg-red-50 rounded-lg font-medium">Unsafe Condition : <strong className="text-red-600">{filteredByYear.filter(s => s.category === 'Unsafe Condition').length}</strong>건</span>
+              </div>
             </div>
           </div>
 
@@ -2062,9 +2067,9 @@
       const completedSubmissions = allDeptSubmissions.filter(s => s.status === '조치완료' || s.status === '기각');
       
       // 필터에 따른 목록
-      const filteredSubmissions = actionFilter === 'all' ? allDeptSubmissions 
+      const filteredSubmissions = (actionFilter === 'all' ? allDeptSubmissions 
         : actionFilter === 'pending' ? pendingSubmissions 
-        : completedSubmissions;
+        : completedSubmissions).slice().sort((a, b) => new Date(String(b.date || '')) - new Date(String(a.date || '')));
       
       const getStatusColor = (status) => {
         switch (status) {
@@ -2143,7 +2148,7 @@
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredSubmissions.slice().reverse().map((item) => (
+              {filteredSubmissions.map((item) => (
                 <div key={item.id} className="bg-white rounded-xl shadow-md p-4">
                   <div className="flex justify-between items-start mb-3">
                     <div><span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>{item.status}</span></div>
@@ -2464,15 +2469,30 @@
 
     function AdminList({ submissions, settings, onDelete, onUpdate, loading, onRefresh }) {
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
-      const [showFilter, setShowFilter] = React.useState(false);
-      const [filters, setFilters] = React.useState({ department: '', category: '', location: '', status: '' });
+      const [filters, setFilters] = React.useState({ name: '', department: '', category: '', location: '', status: '', actionDept: '', actionPerson: '', content: '', emailSent: '' });
       const [deleteTarget, setDeleteTarget] = React.useState(null);
       const [saving, setSaving] = React.useState(false);
       const [showTdRequests, setShowTdRequests] = React.useState(false);
+      const [sortField, setSortField] = React.useState('date');
+      const [sortDir, setSortDir] = React.useState('desc'); // desc = 최신순
       
       // 수정될 데이터 추적
       const [editedData, setEditedData] = React.useState({});
       const [attachmentFiles, setAttachmentFiles] = React.useState({});
+
+      // 헤더 클릭 정렬 토글
+      const toggleSort = (field) => {
+        if (sortField === field) {
+          setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
+        } else {
+          setSortField(field);
+          setSortDir(field === 'date' ? 'desc' : 'asc');
+        }
+      };
+      const SortIcon = ({ field }) => {
+        if (sortField !== field) return React.createElement(Icon, { name: 'ArrowUpDown', size: 10, className: 'inline ml-0.5 text-gray-300' });
+        return React.createElement(Icon, { name: sortDir === 'asc' ? 'ArrowUp' : 'ArrowDown', size: 10, className: 'inline ml-0.5 text-blue-600' });
+      };
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
@@ -2509,9 +2529,10 @@
         // 날짜 필드인 경우 YYYY-MM-DD 형식으로 변환 (input type="date" 용)
         if ((field === 'targetDate' || field === 'closedDate') && value) {
           const str = String(value);
-          // ISO 형식 (2026-02-23T15:00:00.000Z)
+          // ISO 형식 (2026-02-23T15:00:00.000Z) - 로컬 시간으로 변환
           if (str.includes('T')) {
-            return str.split('T')[0];
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
           }
           // 이미 YYYY-MM-DD 형식이면 그대로
           if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
@@ -2527,7 +2548,58 @@
         return value;
       };
 
-      // 필드 수정
+      // 현재 편집 중인 행 ID
+      const [activeRowId, setActiveRowId] = React.useState(null);
+      
+      // editedData를 ref로도 추적 (cleanup에서 사용)
+      const editedDataRef = React.useRef(editedData);
+      const attachmentFilesRef = React.useRef(attachmentFiles);
+      const activeRowRef = React.useRef(activeRowId);
+      React.useEffect(() => { editedDataRef.current = editedData; }, [editedData]);
+      React.useEffect(() => { attachmentFilesRef.current = attachmentFiles; }, [attachmentFiles]);
+      React.useEffect(() => { activeRowRef.current = activeRowId; }, [activeRowId]);
+      
+      // 탭 벗어날 때 미저장 데이터 저장
+      React.useEffect(() => {
+        return () => {
+          const pending = editedDataRef.current;
+          const files = attachmentFilesRef.current;
+          Object.keys(pending).forEach(itemId => {
+            const updateData = { ...pending[itemId] };
+            delete updateData._hasAttachment;
+            if (files[itemId]) updateData.attachment = files[itemId].data;
+            onUpdate(itemId, updateData);
+          });
+        };
+      }, []);
+
+      // 특정 행 저장
+      const autoSaveRow = async (itemId, changes) => {
+        if (!changes) return;
+        setSaving(true);
+        try {
+          const updateData = { ...changes };
+          delete updateData._hasAttachment;
+          if (attachmentFiles[itemId]) {
+            updateData.attachment = attachmentFiles[itemId].data;
+          }
+          await onUpdate(itemId, updateData);
+          setEditedData(prev => { const n = { ...prev }; delete n[itemId]; return n; });
+          setAttachmentFiles(prev => { const n = { ...prev }; delete n[itemId]; return n; });
+          await onRefresh();
+        } catch (err) { console.error('자동 저장 실패:', err); }
+        setSaving(false);
+      };
+
+      // 행 클릭 시 - 이전 행 저장 후 새 행 활성화
+      const handleRowFocus = (itemId) => {
+        if (activeRowId && activeRowId !== itemId && editedData[activeRowId]) {
+          autoSaveRow(activeRowId, editedData[activeRowId]);
+        }
+        setActiveRowId(itemId);
+      };
+
+      // 필드 수정 (변경 후 1.5초 뒤 자동 저장)
       const handleFieldChange = (itemId, field, value) => {
         let updates = { [field]: value };
         
@@ -2539,19 +2611,21 @@
           updates.targetDate = targetDateStr;
         }
         
-        // 조치완료 선택 시 Closed Date 자동 설정 (오늘)
+        // 조치완료 선택 시 Closed Date 자동 설정
         if (field === 'status' && value === '조치완료') {
           const today = new Date().toISOString().split('T')[0];
           updates.closedDate = today;
         }
+        // 조치중으로 변경 시 Closed Date 삭제
+        if (field === 'status' && value !== '조치완료') {
+          updates.closedDate = '';
+        }
         
-        setEditedData(prev => ({
-          ...prev,
-          [itemId]: {
-            ...prev[itemId],
-            ...updates
-          }
-        }));
+        const newEditedData = {
+          ...editedData,
+          [itemId]: { ...(editedData[itemId] || {}), ...updates }
+        };
+        setEditedData(newEditedData);
       };
 
       // 첨부파일 변경
@@ -2575,15 +2649,6 @@
           };
           reader.readAsDataURL(file);
         }
-      };
-
-      // 변경사항 개수
-      const changedCount = Object.keys(editedData).length;
-
-      // 변경사항 초기화
-      const handleCancel = () => {
-        setEditedData({});
-        setAttachmentFiles({});
       };
 
       // 사진 재첨부 (압축 포함)
@@ -2625,34 +2690,21 @@
         }
       };
 
-      // 일괄 저장
-      const handleApply = async () => {
-        if (changedCount === 0) return;
-        setSaving(true);
-        try {
-          for (const [itemId, changes] of Object.entries(editedData)) {
-            const updateData = { ...changes };
-            delete updateData._hasAttachment;
-            if (attachmentFiles[itemId]) {
-              updateData.attachment = attachmentFiles[itemId].data;
-            }
-            await onUpdate(itemId, updateData);
-          }
-          setEditedData({});
-          setAttachmentFiles({});
-          await onRefresh();
-        } catch (err) {
-          alert('저장에 실패했습니다.');
-        }
-        setSaving(false);
-      };
-
       const filteredSubmissions = submissions.filter(item => {
+        if (filters.name && !(item.name || '').includes(filters.name)) return false;
         if (filters.department && item.department !== filters.department) return false;
         if (filters.category && item.category !== filters.category) return false;
         if (filters.location && item.location !== filters.location) return false;
+        if (filters.content && !(item.content || '').includes(filters.content)) return false;
         if (filters.status && item.status !== filters.status) return false;
+        if (filters.actionDept && (item.actionDept || '') !== filters.actionDept) return false;
+        if (filters.actionPerson && !(item.actionPerson || '').includes(filters.actionPerson)) return false;
+        if (filters.emailSent === 'Y' && !item.emailSent) return false;
+        if (filters.emailSent === 'N' && item.emailSent) return false;
         return true;
+      }).sort((a, b) => {
+        // ID가 타임스탬프이므로 큰 값이 최신
+        return new Date(String(b.date || '')) - new Date(String(a.date || ''));
       });
 
       const activeFilterCount = Object.values(filters).filter(v => v !== '').length;
@@ -2674,9 +2726,9 @@
                 {tdPendingRequests.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{tdPendingRequests.length}</span>}
               </button>
               <button onClick={onRefresh} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg"><Icon name="RefreshCw" size={20} /></button>
-              <button onClick={() => setShowFilter(!showFilter)} className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition-colors ${showFilter ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border'}`}>
-                <Icon name="Filter" size={18} />필터{activeFilterCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilterCount}</span>}
-              </button>
+              {activeFilterCount > 0 && <button onClick={() => setFilters({ name: '', department: '', category: '', location: '', status: '', actionDept: '', actionPerson: '', content: '', emailSent: '' })} className="flex items-center gap-1 px-3 py-2 rounded-lg font-medium text-sm bg-red-50 text-red-600 border border-red-200 hover:bg-red-100">
+                <Icon name="RotateCcw" size={14} />필터 초기화
+              </button>}
             </div>
           </div>
 
@@ -2735,77 +2787,88 @@
             </div>
           )}
 
-          {/* 변경사항 알림 바 */}
-          {changedCount > 0 && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex justify-between items-center sticky top-0 z-10">
-              <span className="text-orange-700 font-medium"><Icon name="AlertCircle" size={16} className="inline mr-2" />{changedCount}건의 변경사항이 있습니다</span>
-              <div className="flex gap-2">
-                <button onClick={handleCancel} className="px-4 py-1.5 text-gray-600 border border-gray-300 rounded-lg text-sm">취소</button>
-                <button onClick={handleApply} disabled={saving} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">{saving ? '저장 중...' : '적용'}</button>
-              </div>
+          {/* 자동 저장 표시 */}
+          {saving && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-center sticky top-0 z-10">
+              <Icon name="Loader" size={16} className="text-blue-600 spinner mr-2" />
+              <span className="text-blue-700 font-medium">저장 중...</span>
             </div>
           )}
           
           {/* 필터 */}
-          {showFilter && (
-            <div className="bg-white rounded-xl shadow-md p-4">
-              <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-700 flex items-center gap-2"><Icon name="Filter" size={18} /> 필터 설정</h3><button onClick={() => setFilters({ department: '', category: '', location: '', status: '' })} className="flex items-center gap-1 text-sm text-gray-500"><Icon name="RotateCcw" size={14} /> 초기화</button></div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">부서</label><select value={filters.department} onChange={(e) => setFilters({...filters, department: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">구분</label><select value={filters.category} onChange={(e) => setFilters({...filters, category: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}</select></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">장소</label><select value={filters.location} onChange={(e) => setFilters({...filters, location: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option>{settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}</select></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">조치여부</label><select value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-white"><option value="">전체</option><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option><option value="기각">기각</option></select></div>
-              </div>
-            </div>
-          )}
 
           {/* 테이블 */}
           <div className="bg-white rounded-xl shadow-md overflow-hidden">
             <div className="overflow-auto" style={{maxHeight: 'calc(100vh - 220px)'}}>
               <table className="w-full min-w-[3000px] border-collapse">
-                <thead className="bg-gray-50 border-b" style={{position: 'sticky', top: 0, zIndex: 20}}><tr>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 0, zIndex: 21, minWidth: 120}}>일자</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 120, zIndex: 21, minWidth: 72}}>이름</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 192, zIndex: 21, minWidth: 88}}>부서</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 280, zIndex: 21, minWidth: 88}}>구분</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 368, zIndex: 21, minWidth: 100}}>장소</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 468, zIndex: 21, minWidth: 200, borderRight: '2px solid #cbd5e1'}}>내용</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">접수사진</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치여부</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치부서</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치담당</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-32 bg-gray-50">조치내용</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치사진</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-32 bg-gray-50">요청사항</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">첨부</th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-24 bg-gray-50">비고</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">메일</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">삭제</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">RPN</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Impact</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Incident</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Hazard</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Top5</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">SIO Category</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">KAF</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Target Date</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Closed Date</th>
-                </tr></thead>
+                <thead className="bg-gray-50 border-b" style={{position: 'sticky', top: 0, zIndex: 20}}>
+                <tr>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50 cursor-pointer hover:bg-gray-100" style={{position: 'sticky', left: 0, zIndex: 21, minWidth: 120}} onClick={() => toggleSort('date')}>일자 <SortIcon field="date" /></th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50 cursor-pointer hover:bg-gray-100" style={{position: 'sticky', left: 120, zIndex: 21, minWidth: 72}} onClick={() => toggleSort('name')}>이름 <SortIcon field="name" /></th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 192, zIndex: 21, minWidth: 88}}>부서</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 280, zIndex: 21, minWidth: 88}}>구분</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 368, zIndex: 21, minWidth: 100}}>장소</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50" style={{position: 'sticky', left: 468, zIndex: 21, minWidth: 200, borderRight: '2px solid #cbd5e1'}}>내용</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">접수사진</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치여부</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치부서</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치담당</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-32 bg-gray-50">조치내용</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">조치사진</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-32 bg-gray-50">요청사항</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">첨부</th>
+                  <th className="px-2 py-1 text-left text-xs font-semibold text-gray-600 whitespace-nowrap w-24 bg-gray-50">비고</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">메일</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-gray-50">삭제</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">RPN</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Impact</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Incident</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Hazard</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Top5</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">SIO Category</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">KAF</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Target Date</th>
+                  <th className="px-2 py-1 text-center text-xs font-semibold text-gray-600 whitespace-nowrap bg-yellow-50">Closed Date</th>
+                </tr>
+                <tr className="bg-gray-100 border-b">
+                  <td className="px-1 py-1 bg-gray-100" style={{position: 'sticky', left: 0, zIndex: 21}}></td>
+                  <td className="px-1 py-1 bg-gray-100" style={{position: 'sticky', left: 120, zIndex: 21}}><input type="text" value={filters.name} onChange={(e) => setFilters({...filters, name: e.target.value})} className="w-full p-0.5 border rounded text-xs" placeholder="검색" /></td>
+                  <td className="px-1 py-1 bg-gray-100" style={{position: 'sticky', left: 192, zIndex: 21}}><select value={filters.department} onChange={(e) => setFilters({...filters, department: e.target.value})} className="w-full p-0.5 border rounded text-xs bg-white"><option value="">전체</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
+                  <td className="px-1 py-1 bg-gray-100" style={{position: 'sticky', left: 280, zIndex: 21}}><select value={filters.category} onChange={(e) => setFilters({...filters, category: e.target.value})} className="w-full p-0.5 border rounded text-xs bg-white"><option value="">전체</option>{settings.categories.map((c,i) => <option key={i} value={c}>{c}</option>)}</select></td>
+                  <td className="px-1 py-1 bg-gray-100" style={{position: 'sticky', left: 368, zIndex: 21}}><select value={filters.location} onChange={(e) => setFilters({...filters, location: e.target.value})} className="w-full p-0.5 border rounded text-xs bg-white"><option value="">전체</option>{settings.locations.map((l,i) => <option key={i} value={l}>{l}</option>)}</select></td>
+                  <td className="px-1 py-1 bg-gray-100" style={{position: 'sticky', left: 468, zIndex: 21, borderRight: '2px solid #cbd5e1'}}><input type="text" value={filters.content} onChange={(e) => setFilters({...filters, content: e.target.value})} className="w-full p-0.5 border rounded text-xs" placeholder="검색" /></td>
+                  <td className="px-1 py-1 bg-gray-100"></td>
+                  <td className="px-1 py-1 bg-gray-100"><select value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})} className="w-full p-0.5 border rounded text-xs bg-white"><option value="">전체</option><option value="접수완료">접수완료</option><option value="조치중">조치중</option><option value="조치완료">조치완료</option><option value="기각">기각</option></select></td>
+                  <td className="px-1 py-1 bg-gray-100"><select value={filters.actionDept} onChange={(e) => setFilters({...filters, actionDept: e.target.value})} className="w-full p-0.5 border rounded text-xs bg-white"><option value="">전체</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
+                  <td className="px-1 py-1 bg-gray-100"><input type="text" value={filters.actionPerson} onChange={(e) => setFilters({...filters, actionPerson: e.target.value})} className="w-full p-0.5 border rounded text-xs" placeholder="검색" /></td>
+                  <td className="px-1 py-1 bg-gray-100"></td>
+                  <td className="px-1 py-1 bg-gray-100"></td>
+                  <td className="px-1 py-1 bg-gray-100"></td>
+                  <td className="px-1 py-1 bg-gray-100"></td>
+                  <td className="px-1 py-1 bg-gray-100"></td>
+                  <td className="px-1 py-1 bg-gray-100"><select value={filters.emailSent} onChange={(e) => setFilters({...filters, emailSent: e.target.value})} className="w-full p-0.5 border rounded text-xs bg-white"><option value="">전체</option><option value="Y">발송</option><option value="N">미발송</option></select></td>
+                  <td className="px-1 py-1 bg-gray-100"></td>
+                  <td className="px-1 py-1 bg-gray-100" colSpan="9"></td>
+                </tr>
+                </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredSubmissions.length === 0 ? (<tr><td colSpan="17" className="px-3 py-8 text-center text-gray-500">필터 조건에 맞는 데이터가 없습니다.</td></tr>) : (
-                    filteredSubmissions.slice().reverse().map((item) => {
+                    filteredSubmissions.map((item) => {
                       const isEdited = editedData[item.id];
                       const formatDateForInput = (dateStr) => {
                         if (!dateStr) return '';
                         const str = String(dateStr);
-                        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
-                        if (match) {
-                          return match[1] + '-' + match[2].padStart(2,'0') + '-' + match[3].padStart(2,'0');
+                        // ISO 형식 먼저 체크 (T 포함) - UTC→로컬 변환
+                        if (str.includes('T')) {
+                          const d = new Date(str);
+                          if (!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
                         }
+                        const match = str.match(/(\d{4})[\.\/-]\s*(\d{1,2})[\.\/-]\s*(\d{1,2})/);
+                        if (match) return match[1] + '-' + match[2].padStart(2,'0') + '-' + match[3].padStart(2,'0');
                         return '';
                       };
                       return (
-                        <tr key={item.id} className={isEdited ? 'bg-orange-50' : 'hover:bg-gray-50'}>
+                        <tr key={item.id} className={isEdited ? 'bg-orange-50' : 'hover:bg-gray-50'} onClick={() => handleRowFocus(item.id)}>
                           <td className="px-2 py-2" style={{position: 'sticky', left: 0, zIndex: 10, background: isEdited ? '#fff7ed' : '#fff', minWidth: 120}}><input type="date" value={getValue(item.id, 'date', formatDateForInput(item.date))} onChange={(e) => handleFieldChange(item.id, 'date', e.target.value)} className="w-28 p-1 border rounded text-xs" /></td>
                           <td className="px-2 py-2" style={{position: 'sticky', left: 120, zIndex: 10, background: isEdited ? '#fff7ed' : '#fff', minWidth: 72}}><input type="text" value={getValue(item.id, 'name', item.name)} onChange={(e) => handleFieldChange(item.id, 'name', e.target.value)} className="w-16 p-1 border rounded text-xs" /></td>
                           <td className="px-2 py-2" style={{position: 'sticky', left: 192, zIndex: 10, background: isEdited ? '#fff7ed' : '#fff', minWidth: 88}}><select value={getValue(item.id, 'department', item.department)} onChange={(e) => handleFieldChange(item.id, 'department', e.target.value)} className="w-20 p-1 border rounded text-xs bg-white"><option value="">-</option>{settings.departments.map((d,i) => <option key={i} value={d}>{d}</option>)}</select></td>
@@ -3088,8 +3151,8 @@
       };
       
       const filteredSubmissions = statusFilter === 'all' 
-        ? [...submissions].reverse() 
-        : [...submissions].filter(s => s.status === statusFilter).reverse();
+        ? [...submissions].sort((a, b) => new Date(String(b.date || '')) - new Date(String(a.date || '')))
+        : [...submissions].filter(s => s.status === statusFilter).sort((a, b) => new Date(String(b.date || '')) - new Date(String(a.date || '')));
       
       const startEdit = (item) => {
         setEditingItem(item.id);
