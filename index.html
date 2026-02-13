@@ -2703,8 +2703,13 @@
         if (filters.emailSent === 'N' && item.emailSent) return false;
         return true;
       }).sort((a, b) => {
-        // ID가 타임스탬프이므로 큰 값이 최신
-        return new Date(String(b.date || '')) - new Date(String(a.date || ''));
+        const dir = sortDir === 'asc' ? 1 : -1;
+        if (sortField === 'date') {
+          return dir * (new Date(String(a.date || '')) - new Date(String(b.date || '')));
+        }
+        const va = (a[sortField] || '').toString();
+        const vb = (b[sortField] || '').toString();
+        return dir * va.localeCompare(vb);
       });
 
       const activeFilterCount = Object.values(filters).filter(v => v !== '').length;
