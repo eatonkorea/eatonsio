@@ -168,7 +168,7 @@
       const [showChangePassword, setShowChangePassword] = React.useState(false);
       const [newPassword, setNewPassword] = React.useState('');
       const [confirmPassword, setConfirmPassword] = React.useState('');
-      const [testMode, setTestMode] = React.useState(false); // 테스트 모드 (접수 차단)
+      const [testMode, setTestMode] = React.useState(false); // 테스트 모드 (접수 차단) - 서버 설정에서 로드
       const [urlDept, setUrlDept] = React.useState(initialDept); // URL에서 받은 부서
       
       const defaultSettings = {
@@ -243,6 +243,12 @@
           const result = await response.json();
           if (result.success && result.data) {
             setSettings({ ...defaultSettings, ...result.data });
+            // 접수 차단 상태 로드
+            if (result.data.submitEnabled === 'false') {
+              setTestMode(true);
+            } else {
+              setTestMode(false);
+            }
           }
         } catch (err) { console.error(err); }
       };
@@ -360,6 +366,8 @@
         // 특수 비밀번호: wndwl = 테스트 모드 (접수 차단), tlwkr = 정상 모드
         if (adminPassword === 'wndwl') {
           setTestMode(true);
+          const newSettings = { ...settings, submitEnabled: 'false' };
+          saveSettingsToServer(newSettings);
           setIsAdminAuth(true);
           setShowAdminLogin(false);
           setActiveTab(pendingAdminTab);
@@ -369,6 +377,8 @@
         }
         if (adminPassword === 'tlwkr') {
           setTestMode(false);
+          const newSettings = { ...settings, submitEnabled: 'true' };
+          saveSettingsToServer(newSettings);
           setIsAdminAuth(true);
           setShowAdminLogin(false);
           setActiveTab(pendingAdminTab);
