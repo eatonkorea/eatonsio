@@ -1779,26 +1779,22 @@
               <Icon name="Target" size={18} /> {selectedYear}년 월별 부서별 SIO 현황
             </h3>
             {(() => {
-              // 부서별 총인원 가져오기 (소수점 허용)
-              const deptHeadcount = {};
+              // 부서별 Target 가져오기 (직접 입력한 연간 목표)
+              const deptTarget = {};
               deptSettings.forEach(d => {
                 if (d.department && d.totalMembers) {
-                  deptHeadcount[d.department] = parseFloat(d.totalMembers) || 0;
+                  deptTarget[d.department] = parseFloat(d.totalMembers) || 0;
                 }
               });
               
-              // 등록될 부서 목록 (총인원이 있는 부서만)
-              const departments = Object.keys(deptHeadcount).filter(d => deptHeadcount[d] > 0);
+              // 등록될 부서 목록 (Target이 있는 부서만)
+              const departments = Object.keys(deptTarget).filter(d => deptTarget[d] > 0);
               
-              // 전체 총인원
-              const totalHeadcount = departments.reduce((sum, d) => sum + deptHeadcount[d], 0);
+              // 전체 FY Target 합계
+              const totalFyTarget = departments.reduce((sum, d) => sum + deptTarget[d], 0);
               
-              // FY Target (연간목표) = 총인원 × 2 (3.5명이면 7건)
-              const fyTargetByDept = {};
-              departments.forEach(d => {
-                fyTargetByDept[d] = deptHeadcount[d] * 2;
-              });
-              const totalFyTarget = totalHeadcount * 2;
+              // FY Target = 입력한 숫자 그대로
+              const fyTargetByDept = { ...deptTarget };
               
               // Month Target = FY Target / 12
               const monthTargetByDept = {};
@@ -2008,7 +2004,7 @@
                   </div>
                   
                   {departments.length === 0 && (
-                    <p className="text-gray-500 text-center py-8">부서설정에서 총인원을 입력해주세요.</p>
+                    <p className="text-gray-500 text-center py-8">부서설정에서 Target을 입력해주세요.</p>
                   )}
                 </div>
               );
@@ -3493,6 +3489,8 @@
       const [sending, setSending] = React.useState(false);
       const [sendingReminder, setSendingReminder] = React.useState(false);
       const [showReminderSender, setShowReminderSender] = React.useState(false);
+      const [reminderSchedule, setReminderSchedule] = React.useState({ days: [], enabled: false });
+      const [loadingSchedule, setLoadingSchedule] = React.useState(false);
 
       const formatDate = (dateStr) => {
         if (!dateStr) return '';
@@ -3541,7 +3539,8 @@
 
       const getUnsentItems = (dept) => submissions.filter(s => s.actionDept === dept && !s.emailSent);
       const totalUnsentCount = submissions.filter(s => s.actionDept && !s.emailSent).length;
-      const unsentItemsForDept = selectedDept ? getUnsentItems(selectedDept) : [];
+      const allUnsentItems = submissions.filter(s => s.actionDept && !s.emailSent);
+      const unsentItemsForDept = selectedDept === '전체' ? allUnsentItems : selectedDept ? getUnsentItems(selectedDept) : [];
 
       const toggleItem = (id) => {
         setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -3602,6 +3601,51 @@
         setSendingReminder(false);
       };
 
+      // 리마인드 요일 토글
+      const toggleReminderDay = (dayNum) => {
+        if (reminderSchedule.enabled) return;
+        setReminderSchedule(prev => ({
+          ...prev,
+          days: prev.days.includes(dayNum) ? prev.days.filter(d => d !== dayNum) : [...prev.days, dayNum]
+        }));
+      };
+
+      // 리마인드 스케줄 저장
+      const saveReminderSchedule = async (schedule) => {
+        setLoadingSchedule(true);
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'saveSettings', settings: { reminderDays: JSON.stringify(schedule.days), reminderEnabled: schedule.enabled ? 'true' : 'false' } })
+          });
+          const result = await response.json();
+          if (result.success) {
+            setReminderSchedule(schedule);
+            setAlertModal({ message: schedule.enabled ? '리마인드 자동 발송이 시작되었습니다.' : '리마인드 자동 발송이 중지되었습니다.', type: 'success' });
+          }
+        } catch (e) {
+          setAlertModal({ message: '저장 실패: ' + e.message, type: 'error' });
+        }
+        setLoadingSchedule(false);
+      };
+
+      // 리마인드 스케줄 로드
+      React.useEffect(() => {
+        const loadSchedule = async () => {
+          try {
+            const response = await fetch(API_URL + '?type=settings');
+            const result = await response.json();
+            if (result.success && result.data) {
+              const days = result.data.reminderDays ? JSON.parse(result.data.reminderDays) : [];
+              const enabled = result.data.reminderEnabled === 'true';
+              setReminderSchedule({ days, enabled });
+            }
+          } catch (e) { console.error('스케줄 로드 실패:', e); }
+        };
+        loadSchedule();
+      }, []);
+
       const sections = [
         { key: 'departments', label: '부서 (접수/조치 공용)' },
         { key: 'categories', label: '구분' },
@@ -3612,7 +3656,7 @@
         <div className="space-y-6">
           <h2 className="text-lg font-bold text-gray-800">설정</h2>
 
-          {/* 부서 설정 (이메일/비밀번호/총인원/참조) */}
+          {/* 부서 설정 (이메일/비밀번호/Target/참조) */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icon name="Building" size={20} /> 부서별 설정</h3>
             <div className="space-y-3">
@@ -3638,9 +3682,9 @@
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Icon name="Users" size={14} className="text-gray-400 flex-shrink-0" />
-                      <input type="number" step="0.5" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
-                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="총인원 (예: 3.5)" />
+                      <Icon name="Target" size={14} className="text-gray-400 flex-shrink-0" />
+                      <input type="number" step="1" min="0" value={item.totalMembers} onChange={(e) => updateDeptSetting(item.department, 'totalMembers', e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm" placeholder="Target (연간 목표 건수)" />
                     </div>
                     <div className="flex items-center gap-2 lg:col-span-2">
                       <Icon name="Copy" size={14} className="text-gray-400 flex-shrink-0" />
@@ -3670,6 +3714,10 @@
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-2">조치부서 선택</label>
                   <div className="flex flex-wrap gap-2">
+                    <button onClick={() => { setSelectedDept('전체'); setSelectedItems([]); }}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedDept === '전체' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>
+                      전체 {totalUnsentCount > 0 && <span className="ml-1 bg-orange-500 text-white rounded-full px-1.5 text-xs">{totalUnsentCount}</span>}
+                    </button>
                     {settings.departments.map((dept, idx) => {
                       const count = getUnsentItems(dept).length;
                       return (
@@ -3698,7 +3746,7 @@
                           <label key={item.id} className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer ${selectedItems.includes(item.id) ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
                             <input type="checkbox" checked={selectedItems.includes(item.id)} onChange={() => toggleItem(item.id)} className="mt-1 w-4 h-4" />
                             <div className="flex-1 text-sm">
-                              <div className="text-gray-600">{formatDate(item.date)} | {item.location}</div>
+                              <div className="text-gray-600">{selectedDept === '전체' && <span className="font-medium text-blue-600">[{item.actionDept}] </span>}{formatDate(item.date)} | {item.location}</div>
                               <div className="text-gray-800">{item.content}</div>
                               {item.request && <div className="text-yellow-600 text-xs">요청: {item.request}</div>}
                             </div>
@@ -3718,22 +3766,80 @@
             )}
           </div>
 
-          {/* 리마인드 메일 발송 */}
+          {/* 리마인드 메일 자동 발송 */}
           <div className="bg-white rounded-xl shadow-md p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-gray-700 flex items-center gap-2">
                 <Icon name="Bell" size={20} /> 리마인드 메일
+                {reminderSchedule.enabled ? (
+                  <span className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> 발송중
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                    <span className="w-2 h-2 bg-gray-400 rounded-full"></span> 중지됨
+                  </span>
+                )}
                 {totalPendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">기한초과 {totalPendingCount}건</span>}
               </h3>
               <button onClick={() => setShowReminderSender(!showReminderSender)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${showReminderSender ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                <Icon name="Bell" size={16} /> {showReminderSender ? '닫기' : '보기'}
+                <Icon name="Settings" size={16} /> {showReminderSender ? '닫기' : '설정'}
               </button>
             </div>
 
             {showReminderSender && (
               <div className="space-y-4 border-t pt-4">
-                <p className="text-sm text-gray-600">Target Date가 지난 SIO에 대해 각 부서별로 리마인드 메일을 일괄 발송합니다.</p>
+                <p className="text-sm text-gray-600">Target Date가 지난 SIO에 대해 선택한 요일마다 자동으로 리마인드 메일을 발송합니다.</p>
                 
+                {/* 요일 선택 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-2">발송 요일 선택</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[{num:1,label:'월'},{num:2,label:'화'},{num:3,label:'수'},{num:4,label:'목'},{num:5,label:'금'},{num:6,label:'토'},{num:0,label:'일'}].map(day => (
+                      <button key={day.num} onClick={() => toggleReminderDay(day.num)}
+                        disabled={reminderSchedule.enabled}
+                        className={`w-12 h-12 rounded-lg text-sm font-bold border-2 transition-all ${
+                          reminderSchedule.days.includes(day.num) ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-500 border-gray-300 hover:border-red-300'
+                        } ${reminderSchedule.enabled ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                  {reminderSchedule.days.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      매주 {[...reminderSchedule.days].sort((a,b)=>a-b).map(d => ['일','월','화','수','목','금','토'][d]+'요일').join(', ')}에 자동 발송
+                    </p>
+                  )}
+                </div>
+
+                {/* 시작/중지 버튼 */}
+                <div className="flex gap-3">
+                  {!reminderSchedule.enabled ? (
+                    <button onClick={() => {
+                        if (reminderSchedule.days.length === 0) { setAlertModal({ message: '발송 요일을 1개 이상 선택해주세요.', type: 'error' }); return; }
+                        saveReminderSchedule({ ...reminderSchedule, enabled: true });
+                      }}
+                      disabled={loadingSchedule || reminderSchedule.days.length === 0}
+                      className="flex-1 py-3 bg-green-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-green-600">
+                      {loadingSchedule ? <><Icon name="Loader" size={16} className="spinner" /> 저장 중...</> : <><Icon name="Play" size={16} /> 발송 시작</>}
+                    </button>
+                  ) : (
+                    <button onClick={() => saveReminderSchedule({ ...reminderSchedule, enabled: false })}
+                      disabled={loadingSchedule}
+                      className="flex-1 py-3 bg-red-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-600">
+                      {loadingSchedule ? <><Icon name="Loader" size={16} className="spinner" /> 저장 중...</> : <><Icon name="Square" size={16} /> 발송 중지</>}
+                    </button>
+                  )}
+                </div>
+
+                {/* 수동 발송 버튼 */}
+                {totalPendingCount > 0 && (
+                  <button onClick={sendReminderEmails} disabled={sendingReminder}
+                    className="w-full py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-orange-600">
+                    {sendingReminder ? <><Icon name="Loader" size={16} className="spinner" /> 발송 중...</> : <><Icon name="Bell" size={16} /> 수동 일괄 발송 ({totalPendingCount}건)</>}
+                  </button>
+                )}
+
                 {/* 부서별 기한초과 현황 */}
                 <div className="space-y-2">
                   {(settings.departments || []).map((dept, idx) => {
@@ -3751,16 +3857,6 @@
                         ) : (
                           <p className="text-xs text-orange-600">⚠️ 이메일 미설정</p>
                         )}
-                        <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
-                          {pendingItems.slice(0, 5).map(item => (
-                            <div key={item.id} className="text-xs text-gray-600 bg-white rounded px-2 py-1">
-                              {formatDate(item.date)} - {String(item.content || '').slice(0, 30)}{String(item.content || '').length > 30 ? '...' : ''}
-                            </div>
-                          ))}
-                          {pendingItems.length > 5 && (
-                            <div className="text-xs text-gray-400 text-center">...외 {pendingItems.length - 5}건</div>
-                          )}
-                        </div>
                       </div>
                     );
                   })}
@@ -3771,13 +3867,6 @@
                     </div>
                   )}
                 </div>
-
-                {totalPendingCount > 0 && (
-                  <button onClick={sendReminderEmails} disabled={sendingReminder}
-                    className="w-full py-3 bg-red-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-600">
-                    {sendingReminder ? <><Icon name="Loader" size={16} className="spinner" /> 발송 중...</> : <><Icon name="Bell" size={16} /> 리마인드 메일 일괄 발송</>}
-                  </button>
-                )}
               </div>
             )}
           </div>
