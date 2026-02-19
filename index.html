@@ -3522,12 +3522,18 @@
 
       const addItem = (key) => {
         if (newItem[key].trim()) {
-          setSettings({ ...settings, [key]: [...settings[key], newItem[key].trim()] });
+          const updated = { ...settings, [key]: [...settings[key], newItem[key].trim()] };
+          setSettings(updated);
           setNewItem({ ...newItem, [key]: '' });
+          onSaveSettings(updated);
         }
       };
 
-      const removeItem = (key, index) => setSettings({ ...settings, [key]: settings[key].filter((_, i) => i !== index) });
+      const removeItem = (key, index) => {
+        const updated = { ...settings, [key]: settings[key].filter((_, i) => i !== index) };
+        setSettings(updated);
+        onSaveSettings(updated);
+      };
 
       const updateDeptSetting = (dept, field, value) => setLocalDeptSettings(localDeptSettings.map(s => s.department === dept ? { ...s, [field]: value } : s));
 
