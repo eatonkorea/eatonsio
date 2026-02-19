@@ -266,46 +266,6 @@
 
       React.useEffect(() => { fetchData(); fetchDeptSettings(); fetchSettings(); }, []);
 
-      // 시스템설정이 비어있으면 SIO 데이터에서 자동 복구
-      React.useEffect(() => {
-        if (submissions.length === 0) return;
-        let needSave = false;
-        const updated = { ...settings };
-        
-        // departments가 기본값이고 부서설정 시트에 데이터가 있으면 그걸로 대체
-        if (deptSettings.length > 0 && JSON.stringify(settings.departments) === JSON.stringify(defaultSettings.departments)) {
-          const deptNames = deptSettings.map(d => d.department).filter(Boolean);
-          if (deptNames.length > 0 && JSON.stringify(deptNames) !== JSON.stringify(settings.departments)) {
-            updated.departments = deptNames;
-            needSave = true;
-          }
-        }
-        
-        // categories가 기본값이면 submissions에서 추출
-        if (JSON.stringify(settings.categories) === JSON.stringify(defaultSettings.categories)) {
-          const cats = [...new Set(submissions.map(s => s.category).filter(Boolean))].sort();
-          if (cats.length > 0 && cats.length > settings.categories.length) {
-            updated.categories = cats;
-            needSave = true;
-          }
-        }
-        
-        // locations가 기본값이면 submissions에서 추출
-        if (JSON.stringify(settings.locations) === JSON.stringify(defaultSettings.locations)) {
-          const locs = [...new Set(submissions.map(s => s.location).filter(Boolean))].sort();
-          if (locs.length > 0 && locs.length > settings.locations.length) {
-            updated.locations = locs;
-            needSave = true;
-          }
-        }
-        
-        if (needSave) {
-          setSettings(updated);
-          // 서버에도 저장
-          fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'saveSettings', settings: updated }) });
-        }
-      }, [submissions, deptSettings]);
-
       const handleNewSubmission = async (data, onProgress) => {
         // 테스트 모드일 때 네트워크 에러 표시
         if (testMode) {
