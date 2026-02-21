@@ -436,7 +436,7 @@
             {activeTab === 'submit' && <SubmitForm settings={settings} onSubmit={handleNewSubmission} loading={loading} />}
             {activeTab === 'list' && <SubmissionList submissions={submissions} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'report' && <ReportTab submissions={submissions} deptSettings={deptSettings} loading={loading} onRefresh={fetchData} />}
-            {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} urlDept={urlDept} onUrlDeptUsed={() => setUrlDept(null)} />}
+            {activeTab === 'action' && <ActionTab submissions={submissions} settings={settings} deptSettings={deptSettings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} urlDept={urlDept} onUrlDeptUsed={() => setUrlDept(null)} isAdminAuth={isAdminAuth} />}
             {activeTab === 'help' && <HelpTab />}
             {activeTab === 'adminMobile' && <AdminMobile submissions={submissions} settings={settings} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
             {activeTab === 'admin' && <AdminList submissions={submissions} settings={settings} onDelete={handleDelete} onUpdate={handleUpdate} loading={loading} onRefresh={fetchData} />}
@@ -2014,7 +2014,7 @@
       );
     }
 
-    function ActionTab({ submissions, settings, deptSettings, onUpdate, loading, onRefresh, urlDept, onUrlDeptUsed }) {
+    function ActionTab({ submissions, settings, deptSettings, onUpdate, loading, onRefresh, urlDept, onUrlDeptUsed, isAdminAuth }) {
       const [selectedDept, setSelectedDept] = React.useState(null);
       const [selectedPhoto, setSelectedPhoto] = React.useState(null);
       const [passwordDept, setPasswordDept] = React.useState(null);
@@ -2028,11 +2028,15 @@
       // URL에서 받은 부서로 자동 이동
       React.useEffect(() => {
         if (urlDept && settings.departments.includes(urlDept)) {
-          const deptSetting = deptSettings.find(d => d.department === urlDept);
-          if (deptSetting && deptSetting.password) {
-            setPasswordDept(urlDept);
-          } else {
+          if (isAdminAuth) {
             setSelectedDept(urlDept);
+          } else {
+            const deptSetting = deptSettings.find(d => d.department === urlDept);
+            if (deptSetting && deptSetting.password) {
+              setPasswordDept(urlDept);
+            } else {
+              setSelectedDept(urlDept);
+            }
           }
           if (onUrlDeptUsed) onUrlDeptUsed();
         }
@@ -2085,6 +2089,7 @@
       };
 
       const handleDeptClick = (dept) => {
+        if (isAdminAuth) { setSelectedDept(dept); return; }
         const deptSetting = deptSettings.find(d => d.department === dept);
         if (deptSetting && deptSetting.password) { setPasswordDept(dept); }
         else { setSelectedDept(dept); }
