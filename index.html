@@ -2352,6 +2352,8 @@
       const [saving, setSaving] = React.useState(false);
       const [compressing, setCompressing] = React.useState(false);
       const [showConfirmModal, setShowConfirmModal] = React.useState(false);
+      const [isCompleted, setIsCompleted] = React.useState(item.status === '조치완료');
+      const isDisabled = isCompleted || item.status === '조치완료';
 
       // 이미지 리사이즈 및 압축 함수
       const compressImage = (file, maxSize = 1280, quality = 0.85) => {
@@ -2415,6 +2417,7 @@
       const handleCompleteConfirm = async () => {
         setShowConfirmModal(false);
         setSaving(true);
+        setIsCompleted(true);
         const today = new Date().toISOString().split('T')[0];
         const updateData = { actionContent, actionPerson, status: '조치완료', closedDate: today };
         if (newActionPhoto) updateData.actionPhoto = newActionPhoto;
@@ -2444,11 +2447,17 @@
 
       return (
         <div className="space-y-3">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치담당자</label><input type="text" value={actionPerson} onChange={(e) => { if (e.nativeEvent.isComposing) { setActionPerson(e.target.value); return; } setActionPerson(e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, '')); }} onCompositionEnd={(e) => setActionPerson(e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, ''))} className="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="담당자 이름 (한글만)" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치내용</label><textarea value={actionContent} onChange={(e) => setActionContent(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-sm h-20 resize-none" placeholder="조치 내용을 입력하세요" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치담당자</label><input type="text" value={actionPerson} onChange={(e) => { if (e.nativeEvent.isComposing) { setActionPerson(e.target.value); return; } setActionPerson(e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, '')); }} onCompositionEnd={(e) => setActionPerson(e.target.value.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣]/g, ''))} className={`w-full p-2 border border-gray-300 rounded-lg text-sm ${isDisabled ? 'bg-gray-100 text-gray-500' : ''}`} placeholder="담당자 이름 (한글만)" disabled={isDisabled} /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">조치내용</label><textarea value={actionContent} onChange={(e) => setActionContent(e.target.value)} className={`w-full p-2 border border-gray-300 rounded-lg text-sm h-20 resize-none ${isDisabled ? 'bg-gray-100 text-gray-500' : ''}`} placeholder="조치 내용을 입력하세요" disabled={isDisabled} /></div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">조치사진</label>
-            {compressing ? (
+            {isDisabled ? (
+              actionPhotoPreview ? (
+                <img src={actionPhotoPreview} alt="조치사진" className="w-full h-32 object-cover rounded-lg" />
+              ) : (
+                <div className="text-sm text-gray-400 py-2">사진 없음</div>
+              )
+            ) : compressing ? (
               <div className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50">
                 <Icon name="Loader" size={20} className="text-blue-500 spinner" />
                 <span className="text-xs text-blue-600">압축 중...</span>
@@ -2460,8 +2469,8 @@
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={handleSave} disabled={saving || compressing} className="flex-1 py-2 border border-blue-600 text-blue-600 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
-            <button onClick={handleCompleteClick} disabled={saving || compressing} className="flex-1 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">조치완료</button>
+            <button onClick={handleSave} disabled={saving || compressing || isDisabled} className="flex-1 py-2 border border-blue-600 text-blue-600 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
+            <button onClick={handleCompleteClick} disabled={saving || compressing || isDisabled} className={`flex-1 py-2 rounded-lg font-medium disabled:opacity-50 ${isDisabled ? 'bg-gray-400 text-white' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isDisabled ? '완료됨' : '조치완료'}</button>
           </div>
 
           {/* 조치완료 확인 모달 */}
