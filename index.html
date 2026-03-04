@@ -2545,11 +2545,16 @@
         }
       };
 
-      // 필드 값 가져오기 (수정될 값 우선)
+      // 필드 값 가져오기 (수정될 값 우선, 기본값 적용)
+      const FIELD_DEFAULTS = { impact: 'Minor', incident: 'Notification', top5: 'Yes', kaf: '1' };
       const getValue = (itemId, field, originalValue) => {
         let value = originalValue || '';
         if (editedData[itemId] && editedData[itemId][field] !== undefined) {
           value = editedData[itemId][field];
+        }
+        // 기본값 적용 (값이 없을 때)
+        if (!value && FIELD_DEFAULTS[field]) {
+          value = FIELD_DEFAULTS[field];
         }
         
         // 날짜 필드인 경우 YYYY-MM-DD 형식으로 변환 (input type="date" 용)
@@ -2577,51 +2582,52 @@
       // 현재 편집 중인 행 ID
       const [activeRowId, setActiveRowId] = React.useState(null);
       
-      // editedData를 ref로도 추적 (cleanup에서 사용)
+      // editedData를 ref로도 추적
       const editedDataRef = React.useRef(editedData);
       const attachmentFilesRef = React.useRef(attachmentFiles);
-      const activeRowRef = React.useRef(activeRowId);
       React.useEffect(() => { editedDataRef.current = editedData; }, [editedData]);
       React.useEffect(() => { attachmentFilesRef.current = attachmentFiles; }, [attachmentFiles]);
-      React.useEffect(() => { activeRowRef.current = activeRowId; }, [activeRowId]);
       
-      // 탭 벗어날 때 미저장 데이터 저장
-      React.useEffect(() => {
-        return () => {
-          const pending = editedDataRef.current;
-          const files = attachmentFilesRef.current;
-          Object.keys(pending).forEach(itemId => {
+      const editedCount = Object.keys(editedData).length;
+
+      // 일괄 적용
+      const handleApplyAll = async () => {
+        const pending = { ...editedData };
+        const files = { ...attachmentFiles };
+        const ids = Object.keys(pending);
+        if (ids.length === 0) return;
+        setSaving(true);
+        try {
+          for (const itemId of ids) {
             const updateData = { ...pending[itemId] };
             delete updateData._hasAttachment;
             if (files[itemId]) updateData.attachment = files[itemId].data;
-            onUpdate(itemId, updateData);
-          });
-        };
-      }, []);
-
-      // 특정 행 저장
-      const autoSaveRow = async (itemId, changes) => {
-        if (!changes) return;
-        setSaving(true);
-        try {
-          const updateData = { ...changes };
-          delete updateData._hasAttachment;
-          if (attachmentFiles[itemId]) {
-            updateData.attachment = attachmentFiles[itemId].data;
+            // 기본값 필드가 비어있으면 기본값 포함
+            const item = submissions.find(s => String(s.id) === String(itemId));
+            if (item) {
+              Object.entries(FIELD_DEFAULTS).forEach(([field, def]) => {
+                if (!item[field] && updateData[field] === undefined) {
+                  updateData[field] = def;
+                }
+              });
+            }
+            await onUpdate(itemId, updateData);
           }
-          await onUpdate(itemId, updateData);
-          setEditedData(prev => { const n = { ...prev }; delete n[itemId]; return n; });
-          setAttachmentFiles(prev => { const n = { ...prev }; delete n[itemId]; return n; });
+          setEditedData({});
+          setAttachmentFiles({});
           await onRefresh();
-        } catch (err) { console.error('자동 저장 실패:', err); }
+        } catch (err) { console.error('일괄 저장 실패:', err); }
         setSaving(false);
       };
 
-      // 행 클릭 시 - 이전 행 저장 후 새 행 활성화
+      // 취소 (변경사항 모두 버리기)
+      const handleCancelAll = () => {
+        setEditedData({});
+        setAttachmentFiles({});
+      };
+
+      // 행 클릭 시 - 활성 행 변경만 (자동저장 없음)
       const handleRowFocus = (itemId) => {
-        if (activeRowId && activeRowId !== itemId && editedData[activeRowId]) {
-          autoSaveRow(activeRowId, editedData[activeRowId]);
-        }
         setActiveRowId(itemId);
       };
 
@@ -2790,8 +2796,23 @@
         <div className="space-y-4">
           {/* 헤더 */}
           <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold text-gray-800">관리 목록 ({filteredSubmissions.length}건)</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-gray-800">관리 목록 ({filteredSubmissions.length}건)</h2>
+              {editedCount > 0 && (
+                <span className="bg-orange-100 text-orange-700 text-xs font-medium px-2 py-1 rounded-full">{editedCount}건 수정중</span>
+              )}
+            </div>
             <div className="flex gap-2">
+              {editedCount > 0 && (
+                <>
+                  <button onClick={handleCancelAll} className="flex items-center gap-1 px-3 py-2 rounded-lg font-medium text-sm bg-white text-gray-600 border border-gray-300 hover:bg-gray-50">
+                    <Icon name="X" size={16} />취소
+                  </button>
+                  <button onClick={handleApplyAll} disabled={saving} className="flex items-center gap-1 px-3 py-2 rounded-lg font-medium text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                    {saving ? <><Icon name="Loader" size={16} className="spinner" />저장 중...</> : <><Icon name="Check" size={16} />적용 ({editedCount}건)</>}
+                  </button>
+                </>
+              )}
               <button onClick={handleExportExcel} className="flex items-center gap-1 px-3 py-2 rounded-lg font-medium text-sm bg-white text-green-600 border border-green-300 hover:bg-green-50">
                 <Icon name="Download" size={16} />엑셀
               </button>
