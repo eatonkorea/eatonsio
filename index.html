@@ -1783,7 +1783,7 @@
               const deptTarget = {};
               deptSettings.forEach(d => {
                 if (d.department && d.totalMembers) {
-                  deptTarget[d.department] = parseFloat(d.totalMembers) || 0;
+                  deptTarget[d.department] = (parseFloat(d.totalMembers) || 0) * 2;
                 }
               });
               
@@ -1803,7 +1803,7 @@
               });
               const totalMonthTarget = Math.round((totalFyTarget / 12) * 10) / 10;
               
-              // 월별 부서별 접수 현황
+              // 월별 부서별 접수 현황 (기각 제외)
               const monthlyData = {};
               months.forEach(m => {
                 monthlyData[m] = {};
@@ -1813,6 +1813,7 @@
               });
               
               filteredByYear.forEach(s => {
+                if (s.status === '기각') return; // 기각 제외
                 const date = parseDate(s.date);
                 if (!date) return;
                 const month = date.getMonth() + 1;
@@ -1822,16 +1823,12 @@
                 }
               });
               
-              // 월별 MTD (누적) 계산
+              // 월별 MTD (해당 월 총합)
               const mtdByMonth = {};
               months.forEach(m => {
                 mtdByMonth[m] = {};
                 departments.forEach(d => {
-                  let cumulative = 0;
-                  for (let i = 1; i <= m; i++) {
-                    cumulative += monthlyData[i][d] || 0;
-                  }
-                  mtdByMonth[m][d] = cumulative;
+                  mtdByMonth[m][d] = monthlyData[m][d] || 0;
                 });
               });
               
@@ -1841,16 +1838,19 @@
                 monthlyTotal[m] = departments.reduce((sum, d) => sum + (monthlyData[m][d] || 0), 0);
               });
               
-              // MTD 전체 합계
+              // MTD 전체 합계 (해당 월만)
               const mtdTotal = {};
               months.forEach(m => {
-                mtdTotal[m] = departments.reduce((sum, d) => sum + (mtdByMonth[m][d] || 0), 0);
+                mtdTotal[m] = monthlyTotal[m];
               });
               
-              // YTD Target (누적 목표)
+              // Month Target 고정 19
+              const MONTH_TARGET = 19;
+              
+              // YTD Target (누적 목표) = 19 × 월
               const ytdTargetByMonth = {};
               months.forEach(m => {
-                ytdTargetByMonth[m] = Math.round(totalMonthTarget * m);
+                ytdTargetByMonth[m] = MONTH_TARGET * m;
               });
               
               // Target Rate (목표 비율) - 각 월까지의 누적 목표 / 연간 목표
@@ -1859,11 +1859,12 @@
                 targetRateByMonth[m] = Math.round((m / 12) * 100);
               });
               
-              // Participant Rate (참여율) = MTD / YTD Target × 100
+              // Participant Rate (참여율) = 누적 실적 / YTD Target × 100
               const participantRateByMonth = {};
               months.forEach(m => {
                 const ytdTarget = ytdTargetByMonth[m];
-                participantRateByMonth[m] = ytdTarget > 0 ? Math.round((mtdTotal[m] / ytdTarget) * 100) : 0;
+                const ytdActual = months.filter(i => i <= m).reduce((sum, i) => sum + mtdTotal[i], 0);
+                participantRateByMonth[m] = ytdTarget > 0 ? Math.round((ytdActual / ytdTarget) * 100) : 0;
               });
               
               // 부서별 Participant Rate 계산 (정렬 없이 설정 순서 유지)
@@ -1900,7 +1901,7 @@
                               <td key={d} className="py-2 px-3 text-center text-base font-bold border border-gray-300">{monthlyData[m][d] || '-'}</td>
                             ))}
                             <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-gray-50">{mtdTotal[m] || '-'}</td>
-                            <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-yellow-50">{Math.round(totalMonthTarget)}</td>
+                            <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-yellow-50">{MONTH_TARGET}</td>
                             <td className="py-2 px-3 text-center text-base font-bold border border-gray-300 bg-yellow-50">{ytdTargetByMonth[m]}</td>
                           </tr>
                         );
