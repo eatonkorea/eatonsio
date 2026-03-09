@@ -1381,6 +1381,7 @@
       const [selectedPieDept, setSelectedPieDept] = React.useState(null);
       const [showAllPersonStats, setShowAllPersonStats] = React.useState(false);
       const [showAllActionStats, setShowAllActionStats] = React.useState(false);
+      const [downloadMonth, setDownloadMonth] = React.useState(new Date().getMonth() + 1);
       
       // 날짜 파싱 함수
       const parseDate = (dateStr) => {
@@ -1416,6 +1417,134 @@
         if (!date) return false;
         return date.getFullYear() === selectedYear;
       });
+
+      const handleDownloadPPT = () => {
+        const MONTH_TARGET = 19;
+        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const deptTargetMap = {};
+        deptSettings.forEach(d => {
+          if (d.department && d.totalMembers) deptTargetMap[d.department] = (parseFloat(d.totalMembers) || 0) * 2;
+        });
+        const departments = Object.keys(deptTargetMap).filter(d => deptTargetMap[d] > 0);
+        const totalFyTarget = departments.reduce((sum, d) => sum + deptTargetMap[d], 0);
+        
+        const mData = {};
+        for (let m = 1; m <= 12; m++) { mData[m] = {}; departments.forEach(d => { mData[m][d] = 0; }); }
+        filteredByYear.forEach(s => {
+          if (s.status === '기각') return;
+          const dt = parseDate(s.date);
+          if (!dt) return;
+          const month = dt.getMonth() + 1;
+          if (s.department && departments.includes(s.department)) mData[month][s.department]++;
+        });
+        
+        const dm = downloadMonth;
+        const pptx = new PptxGenJS();
+        pptx.layout = 'LAYOUT_WIDE';
+        
+        const slide1 = pptx.addSlide();
+        slide1.background = { color: 'FFFFFF' };
+        slide1.addText(selectedYear + ' Monthly SIO Status (' + monthNames[dm-1] + ')', { x: 0.3, y: 0.2, w: 12, h: 0.5, fontSize: 18, bold: true, color: '333333', fontFace: 'Arial' });
+        
+        const cellStyle = function(opts) { return Object.assign({ fontSize: 9, align: 'center', color: '333333', border: { pt: 0.5, color: 'CCCCCC' }, fontFace: 'Arial' }, opts || {}); };
+        
+        var headerRow = [{ text: 'Month', options: cellStyle({ fill: 'E5E7EB', bold: true }) }];
+        departments.forEach(function(d) { headerRow.push({ text: d, options: cellStyle({ fill: 'F3F4F6', bold: true }) }); });
+        headerRow.push({ text: 'MTD', options: cellStyle({ fill: 'E5E7EB', bold: true }) });
+        headerRow.push({ text: 'Month\nTarget', options: cellStyle({ fill: 'FEF9C3', bold: true, color: '854D0E' }) });
+        headerRow.push({ text: 'YTD\nTarget', options: cellStyle({ fill: 'FEF9C3', bold: true, color: '854D0E' }) });
+        
+        var tableRows = [headerRow];
+        
+        for (var m = 1; m <= 12; m++) {
+          if (m > dm) {
+            var emptyRow = [{ text: monthNames[m-1], options: cellStyle({ fill: 'F9FAFB', bold: true }) }];
+            departments.forEach(function() { emptyRow.push({ text: '', options: cellStyle({}) }); });
+            emptyRow.push({ text: '', options: cellStyle({ fill: 'F9FAFB' }) });
+            emptyRow.push({ text: String(MONTH_TARGET), options: cellStyle({ fill: 'FEFCE8' }) });
+            emptyRow.push({ text: String(MONTH_TARGET * m), options: cellStyle({ fill: 'FEFCE8' }) });
+            tableRows.push(emptyRow);
+          } else {
+            var mtd = 0;
+            departments.forEach(function(d) { mtd += (mData[m][d] || 0); });
+            var row = [{ text: monthNames[m-1], options: cellStyle({ fill: 'F9FAFB', bold: true }) }];
+            departments.forEach(function(d) { row.push({ text: String(mData[m][d] || '-'), options: cellStyle({}) }); });
+            row.push({ text: String(mtd || '-'), options: cellStyle({ fill: 'F9FAFB', bold: true }) });
+            row.push({ text: String(MONTH_TARGET), options: cellStyle({ fill: 'FEFCE8' }) });
+            row.push({ text: String(MONTH_TARGET * m), options: cellStyle({ fill: 'FEFCE8' }) });
+            tableRows.push(row);
+          }
+        }
+        
+        var fyRow = [{ text: 'FY Target', options: cellStyle({ fill: 'D1D5DB', bold: true }) }];
+        departments.forEach(function(d) { fyRow.push({ text: String(deptTargetMap[d]), options: cellStyle({ fill: 'D1D5DB', bold: true }) }); });
+        fyRow.push({ text: String(totalFyTarget), options: cellStyle({ fill: 'D1D5DB', bold: true }) });
+        fyRow.push({ text: '', options: cellStyle({ fill: 'FEFCE8' }) });
+        fyRow.push({ text: '', options: cellStyle({ fill: 'FEFCE8' }) });
+        tableRows.push(fyRow);
+        
+        var totalRow = [{ text: 'Total SIO', options: cellStyle({ fill: 'CFFAFE', bold: true }) }];
+        var grandTotal = 0;
+        departments.forEach(function(d) {
+          var t = 0; for (var i = 1; i <= dm; i++) t += (mData[i][d] || 0);
+          totalRow.push({ text: String(t || '-'), options: cellStyle({ fill: 'ECFEFF', bold: true }) });
+          grandTotal += t;
+        });
+        totalRow.push({ text: String(grandTotal), options: cellStyle({ fill: 'CFFAFE', bold: true }) });
+        totalRow.push({ text: '', options: cellStyle({}) });
+        totalRow.push({ text: '', options: cellStyle({}) });
+        tableRows.push(totalRow);
+        
+        var curMonth = dm; // 선택한 월 기준
+        var curYear = new Date().getFullYear();
+        var expectedRate = Math.round((dm / 12) * 100);
+        
+        var prRow = [{ text: 'Participant\nrate', options: cellStyle({ fill: 'CFFAFE', bold: true }) }];
+        departments.forEach(function(d) {
+          var t = 0; for (var i = 1; i <= dm; i++) t += (mData[i][d] || 0);
+          var rate = deptTargetMap[d] > 0 ? Math.round((t / deptTargetMap[d]) * 100) : 0;
+          var isGood = rate >= expectedRate;
+          prRow.push({ text: rate + '%', options: cellStyle({ fill: isGood ? '00FF00' : 'FF0000', color: isGood ? '000000' : 'FFFFFF', bold: true }) });
+        });
+        var allRate = totalFyTarget > 0 ? Math.round((grandTotal / totalFyTarget) * 100) : 0;
+        var allGood = allRate >= expectedRate;
+        prRow.push({ text: allRate + '%', options: cellStyle({ fill: allGood ? '00FF00' : 'FF0000', color: allGood ? '000000' : 'FFFFFF', bold: true }) });
+        prRow.push({ text: '', options: cellStyle({}) });
+        prRow.push({ text: '', options: cellStyle({}) });
+        tableRows.push(prRow);
+        
+        var deptW = departments.length > 0 ? Math.min(1.0, 9.5 / departments.length) : 1.0;
+        var colW = [0.8];
+        departments.forEach(function() { colW.push(deptW); });
+        colW.push(0.6); colW.push(0.7); colW.push(0.7);
+        var tableW = colW.reduce(function(a, b) { return a + b; }, 0);
+        
+        slide1.addTable(tableRows, { x: 0.3, y: 0.8, w: Math.min(tableW, 12.7), colW: colW, rowH: 0.28, fontSize: 9, fontFace: 'Arial', valign: 'middle' });
+        
+        var progressY = 0.8 + (tableRows.length * 0.28) + 0.3;
+        slide1.addText('Monthly Progress', { x: 0.3, y: progressY, w: 5, h: 0.35, fontSize: 12, bold: true, color: '333333', fontFace: 'Arial' });
+        
+        var pHeader = [{ text: '', options: cellStyle({ fill: 'FFFFFF' }) }];
+        var pRow = [{ text: 'Target rate', options: cellStyle({ bold: true }) }];
+        for (var pm = 1; pm <= 12; pm++) {
+          pHeader.push({ text: monthNames[pm-1], options: cellStyle({ bold: true }) });
+          var targetRate = Math.round((pm / 12) * 100);
+          var ytdActual = 0;
+          for (var j = 1; j <= pm; j++) { departments.forEach(function(d) { ytdActual += (mData[j][d] || 0); }); }
+          var ytdTarget = MONTH_TARGET * pm;
+          var actualRate = ytdTarget > 0 ? Math.round((ytdActual / ytdTarget) * 100) : 0;
+          var isPast = pm <= dm;
+          var good = actualRate >= targetRate;
+          pRow.push({ text: targetRate + '%', options: cellStyle({ fill: isPast ? (good ? '00FF00' : 'FF0000') : 'E5E7EB', color: isPast ? (good ? '000000' : 'FFFFFF') : '4B5563', bold: true }) });
+        }
+        
+        var pColW = [0.9];
+        for (var k = 0; k < 12; k++) pColW.push((tableW - 0.9) / 12);
+        slide1.addTable([pHeader, pRow], { x: 0.3, y: progressY + 0.35, w: Math.min(tableW, 12.7), colW: pColW, rowH: 0.3, fontSize: 9, fontFace: 'Arial', valign: 'middle' });
+        
+        var dateStr = selectedYear + String(dm).padStart(2, '0');
+        pptx.writeFile({ fileName: 'SIO_Status_' + dateStr + '.pptx' });
+      };
 
       // 1. 월별 부서별 접수 현황 (부서=행, 월=열)
       const getMonthlyDeptStats = () => {
@@ -1777,6 +1906,10 @@
           <div className="bg-white rounded-xl shadow-md p-4">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
               <Icon name="Target" size={18} /> {selectedYear}년 월별 부서별 SIO 현황
+              <select value={downloadMonth} onChange={(e) => setDownloadMonth(parseInt(e.target.value))} className="ml-auto p-1 border border-gray-300 rounded text-sm bg-white">
+                <option value={1}>Jan</option><option value={2}>Feb</option><option value={3}>Mar</option><option value={4}>Apr</option><option value={5}>May</option><option value={6}>Jun</option><option value={7}>Jul</option><option value={8}>Aug</option><option value={9}>Sep</option><option value={10}>Oct</option><option value={11}>Nov</option><option value={12}>Dec</option>
+              </select>
+              <button onClick={handleDownloadPPT} className="px-2 py-1 rounded text-sm bg-orange-50 text-orange-600 border border-orange-300">PPT</button>
             </h3>
             {(() => {
               // 부서별 Target 가져오기 (직접 입력한 연간 목표)
